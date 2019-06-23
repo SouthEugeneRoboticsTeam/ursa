@@ -1,5 +1,5 @@
-void fscmCFSetupGyro() {
-  Wire.begin();//////////////////////setup gy521
+void setupGyro() {
+  Wire.begin();//////////////////////setup mpu6050
   Wire.setClock(400000L);
   Wire.beginTransmission(0x68);
   Wire.write(0x6B);
@@ -11,14 +11,14 @@ void fscmCFSetupGyro() {
   Wire.endTransmission(true);
   Wire.beginTransmission(0x68);
   Wire.write(0x19);
-  Wire.write(0x04);//clock devider
+  Wire.write(0x04);//clock divider
   Wire.endTransmission(true);
   Wire.beginTransmission(0x68);
   Wire.write(0x1A);
   Wire.write(0x00);//buffering
-  Wire.endTransmission(true);///////end setup gy521
+  Wire.endTransmission(true);///////end setup mpu6050
 }
-void fscmCFReadGyro() {
+void readGyro() {
   Wire.beginTransmission(0x68);
   Wire.write(0x3B);
   Wire.endTransmission(false);
