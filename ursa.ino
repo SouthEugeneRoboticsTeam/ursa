@@ -1,19 +1,44 @@
 #include <Wire.h>
 #include <PID_v1.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiAP.h>
 
+const char *robotSSID = "SERT_URSA_0";
+const char *robotPass = "sert2521";
 int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0; //for MPU6050
 unsigned long lastCalcedMPU6050 = 0;
 float oDPSX, oDPSY, oDPSZ = 0.000;
 float pitch = 0.000;
+WiFiServer server(80);
+
 void setup() {
-  Serial.begin(2000000);//for debug, vroom vroom fast
+  Serial.begin(2000000);//for debug
   setupMPU6050();
   zeroMPU6050();
+  WiFi.softAP(robotSSID, robotPass);
+  IPAddress myIP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(myIP);
+  server.begin();
+  Serial.println("Server started");
 }
 void loop() { //core 1
   readMPU6050();
 
   delay(5);
+}
+void DBserialPrintCurrentCore(String msg) {
+  Serial.print(msg);
+  Serial.print(" running on core #");
+  Serial.println(xPortGetCoreID());
+}
+void WiFiEvent(WiFiEvent_t event) {
+  DBserialPrintCurrentCore("wifi event");
+  Serial.print("wifi event: ");
+  Serial.println(event);
+  Serial.print("WiFi.RSSI=");
+  Serial.println(WiFi.RSSI());//does this work?
 }
 void setupMPU6050() {
   Wire.begin();//////////////////////setup mpu6050
