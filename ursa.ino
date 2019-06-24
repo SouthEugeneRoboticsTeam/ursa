@@ -1,11 +1,19 @@
-int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oX0, oY0, oZ0 = 0; //for MPU6050
+#include <Wire.h>
+#include <PID_v1.h>
+
+int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0; //for MPU6050
 unsigned long lastCalcedMPU6050 = 0;
+float oDPSX, oDPSY, oDPSZ = 0.000;
 float pitch = 0.000;
 void setup() {
-  setupGyro(MPU6050);
-  zeroGyro(MPU6050);
+  Serial.begin(2000000);//for debug, vroom vroom fast
+  setupMPU6050();
+  zeroMPU6050();
 }
 void loop() { //core 1
+  readMPU6050();
+
+  delay(5);
 }
 void setupMPU6050() {
   Wire.begin();//////////////////////setup mpu6050
@@ -39,14 +47,14 @@ void readMPU6050() {
   oRX = Wire.read() << 8 | Wire.read();
   oRY = Wire.read() << 8 | Wire.read();
   oRZ = Wire.read() << 8 | Wire.read();
-  oDPSX = (oRX - oGX0) * 1000.00 / 32766;//convert to degrees per second
-  oDPSY = (oRY - oGY0) * 1000.00 / 32766;
-  oDPSZ = (oRZ - oGZ0) * 1000.00 / 32766;
+  oDPSX = (oRX - oRX0) * 1000.00 / 32766;//convert to degrees per second
+  oDPSY = (oRY - oRY0) * 1000.00 / 32766;
+  oDPSZ = (oRZ - oRZ0) * 1000.00 / 32766;
   pitch = .99 * (pitch + oDPSX * (millis() - lastCalcedMPU6050) / 1000.000) + .01 * degrees(atan2(oAY, oAZ));
   lastCalcedMPU6050 = millis();
 }
 void zeroMPU6050() {
-  GX0 = 0; GY0 = 0; GZ0 = 0;
+  oRX0 = 0; oRY0 = 0; oRZ0 = 0;
   for (int i = 0; i < 50; i++) {
     Wire.beginTransmission(0x68);
     Wire.write(0x3B);
@@ -59,12 +67,12 @@ void zeroMPU6050() {
     oRX = Wire.read() << 8 | Wire.read();
     oRY = Wire.read() << 8 | Wire.read();
     oRZ = Wire.read() << 8 | Wire.read();
-    oGX0 += oRX;
-    oGY0 += oRY;
-    oGZ0 += oRZ;
+    oRX0 += oRX;
+    oRY0 += oRY;
+    oRZ0 += oRZ;
     delay(10 + i / 5);
   }
-  oGX0 /= 50;
-  oGY0 /= 50;
-  oGZ0 /= 50;
+  oRX0 /= 50;
+  oRY0 /= 50;
+  oRZ0 /= 50;
 }
