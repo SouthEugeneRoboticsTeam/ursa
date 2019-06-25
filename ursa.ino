@@ -10,8 +10,10 @@ int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0; //for MPU6050
 unsigned long lastCalcedMPU6050 = 0;
 float oDPSX, oDPSY, oDPSZ = 0.000;
 float pitch = 0.000;
-WiFiServer server(80);
 
+
+
+WiFiServer server(80);
 void setup() {
   Serial.begin(2000000);//for debug
   setupMPU6050();
@@ -25,8 +27,7 @@ void setup() {
 }
 void loop() { //core 1
   readMPU6050();
-
-  delay(5);
+  delay(5000);
 }
 void DBserialPrintCurrentCore(String msg) {
   Serial.print(msg);
@@ -38,7 +39,14 @@ void WiFiEvent(WiFiEvent_t event) {
   Serial.print("wifi event: ");
   Serial.println(event);
   Serial.print("WiFi.RSSI=");
-  Serial.println(WiFi.RSSI());//does this work?
+  Serial.println(WiFi.RSSI());
+  WiFiClient client = server.available();
+  if (client) {
+    while (client.available()) {
+      char c = client.read();
+      Serial.write(c);
+    }
+  }
 }
 void setupMPU6050() {
   Wire.begin();//////////////////////setup mpu6050
