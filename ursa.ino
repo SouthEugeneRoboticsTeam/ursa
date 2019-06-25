@@ -3,21 +3,38 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiAP.h>
-
+#include <AccelStepper.h>
 const char *robotSSID = "SERT_URSA_0";
 const char *robotPass = "sert2521";
+boolean robotEnabled = false;
+boolean enable = false;
+boolean tipped = false;
 int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0; //for MPU6050
 unsigned long lastCalcedMPU6050 = 0;
 float oDPSX, oDPSY, oDPSZ = 0.000;
 float pitch = 0.000;
-
-
-
+int leftSpeed = 0;
+int rightSpeed = 0;
+int motorSpeedVal = 0;
+int speedVal = 0;
+int turnVal = 0;
+float targetPitch = 0.000;
+float PA, IA, DA, PS, IS, DS = 0.0000;
+PID PIDA(&pitch, &motorSpeedVal, &targetPitch, PA, IA, DA, DIRECT);
+PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, PS, IS, DS, DIRECT);
+AccelStepper leftStepper(AccelStepper::FULL4WIRE, 6, 7, 8, 9);
+AccelStepper rightStepper(AccelStepper::FULL4WIRE, 2, 3, 4, 5);
 WiFiServer server(80);
 void setup() {
+  PIDA.SetMode(AUTOMATIC);
+  PIDS.SetMode(AUTOMATIC);
+  PIDA.SetSampleTime(1);
+  PIDS.SetSampleTime(1);
   Serial.begin(2000000);//for debug
   setupMPU6050();
   zeroMPU6050();
+  leftStepper.setMaxSpeed(4000);//test
+  rightStepper.setMaxSpeed(4000);//test
   WiFi.softAP(robotSSID, robotPass);
   IPAddress myIP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
@@ -27,7 +44,12 @@ void setup() {
 }
 void loop() { //core 1
   readMPU6050();
-  delay(5000);
+  PIDA.Compute();
+  PIDS.Compute();
+  leftStepper.setSpeed(motorSpeedVal + turnVal);
+  rightStepper.setSpeed(motorSpeedVal - turnVal);
+  leftStepper.run();
+  rightStepper.run();
 }
 void DBserialPrintCurrentCore(String msg) {
   Serial.print(msg);
