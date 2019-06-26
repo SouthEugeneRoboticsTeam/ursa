@@ -160,3 +160,45 @@ void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift.
   oRY0 /= 50;
   oRZ0 /= 50;
 }
+boolean parseBl(byte* arrayPointer, int* i) {//declare a function that returns a boolean and will be given the location of an array and what element of the array to start at
+  byte msg = *(arrayPointer + *i); //read the byte at the location and element given
+  if (msg == '0') {//if the number is 0...
+    return false;//...return false
+  }
+  if (msg == '1') {//if the number is one...
+    return true;//...return true
+  }
+  i++;
+  return false;//if anything else, default to false
+}
+byte parseBy(byte* arrayPointer, int* i) {//declare a function that returns a byte and will be given the location of an array and what element of the array to start at
+  byte msg = *(arrayPointer + *i); //read the byte from the array given at the location given (kind of a silly function but it will be nice for consistency between other data types
+  i++;//increment the counter for the next value
+  return msg;//and return it
+}
+int parseIn(byte* arrayPointer, int* i) {//declare a function that returns an int and will be given the location of an array and what element of the array to start at
+  union {//this lets us translate between two variables (equal size, but one's two bytes in an array, and one's a two byte int  Reference for unions: https://www.mcgurrin.info/robots/127/
+    byte b[2];
+    int v;
+  } d;//d is the union, d.b acceses the byte array, d.v acceses the int
+  d.b[0] = *(arrayPointer + *i); //read the first byte
+  i++;//increment i to the location of the second byte
+  d.b[1] = *(arrayPointer + *i); //read the second byte
+  i++;//shift i the second time so it's ready for the next function
+  return d.v;//return the int form of union d
+}
+float parseFl(byte* arrayPointer, int* i) {//declare a function that returns a (4 byte) float and will be given the location of an array and what element of the array to start at
+  union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
+    byte b[4];
+    float v;
+  } d;//d is the union, d.b acceses the byte array, d.v acceses the float
+  d.b[0] = *(arrayPointer + *i); //read the first byte from the array
+  i++;//increment i to the next position in the array
+  d.b[1] = *(arrayPointer + *i);
+  i++;//i to 3rd position now
+  d.b[2] = *(arrayPointer + *i);
+  i++;//i to 4th position now
+  d.b[3] = *(arrayPointer + *i);
+  i++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
+  return d.v;//return the float form of union d
+}
