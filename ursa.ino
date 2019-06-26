@@ -1,8 +1,5 @@
-//TODO: make code to control the stepper motors (run them at their motor speed vals)
-//TODO: make code to turn on and off the stepper motors
-//TODO: add framework code for handling and decoding control messages from wifi
-float MAX_TIP 33.3//max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
-byte ID 0//robot ID, sent to DS, could be used to identify what unique robot this is, and what attachments it has
+float MAX_TIP = 33.3; //max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
+#define ID 0//robot ID, sent to DS, could be used to identify what unique robot this is, and what attachments it has
 const char *robotSSID = "SERT_URSA_0";//name of robot's wifi hotspot, should be unique between all robots
 const char *robotPass = "sert2521";//password for the robot's wifi network, not very secure but it might discourage random people from connecting and messing up our communication
 #include <Wire.h>//arduino library used for I2C communication with the mpu6050 gyro board Reference for Wire: https://www.arduino.cc/en/Reference/Wire
@@ -16,18 +13,19 @@ boolean enable = false;//is the DS telling the robot to enable? (different from 
 boolean tipped = false;//has the robot tipped past it's maximum recoverable angle?
 int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0;//for MPU6050 A=acceleration(raw) R=rotation(raw) R_0=values used to zero the gyro on startup
 unsigned long lastCalcedMPU6050 = 0;//micros() value of last orientation read. used to integrate gyro data to get rotation
-float oDPSX, oDPSY, oDPSZ = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
-float pitch = 0.000;//angle of pitch of the robot forward and backwards in degrees. The output from the MPU6050 that matters for self balencing.
+double oDPSX, oDPSY, oDPSZ = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
+double pitch = 0.000;//angle of pitch of the robot forward and backwards in degrees. The output from the MPU6050 that matters for self balencing.
 float pitchOffset = 0.000; //subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
 int leftMotorSpeed = 0;//stepper ticks per second that the left motor is currently doing
 int rightMotorSpeed = 0;//stepper ticks per second that the right motor is currently doing
-int motorSpeedVal = 0;//average stepper ticks per second that the two motors should do-how much movement in the forwards/backwards direction should they move-used for balencing
-int speedVal = 0;//how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
+double motorSpeedVal = 0;//average stepper ticks per second that the two motors should do-how much movement in the forwards/backwards direction should they move-used for balencing
+double speedVal = 0;//how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;//difference in speed for each motor-how much should the robot turn (positive=turn right, negative=turn left)
-float targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
-float PA, IA, DA, PS, IS, DS = 0.0000;//PID constants for the Angle and Speed control loops
-PID PIDA(&pitch, &motorSpeedVal, &targetPitch, PA, IA, DA, DIRECT);//setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, PS, IS, DS, DIRECT);//setup the Speed PID loop
+double targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
+double kPA, kIA, kDA = 0.0000;//PID constants for the Angle control loop
+double kPS, kIS, kDS = 0.0000;//PID constants for the Speed control loop
+PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kPA, kIA, kDA, DIRECT);//setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
+PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kPS, kIA, kDA, DIRECT);//setup the Speed PID loop
 WiFiServer server(80);//a wifi server on port 80
 void setup() {//this function is run once when the esp32 turns on and can be used to set up other
   PIDA.SetMode(MANUAL);//PID loop off
@@ -55,7 +53,7 @@ void loop() {//this function runs over and over and is where main code is usuall
   if (tipped) {//if tipped is true... (you don't have to say ==true, it is assumed)
     robotEnabled = false;//...disable the robot. This is so if the robot falls over, instead of running at full speed trying to right itself as its top skids along the ground, it just disables and can't be enabled until it is righted
     leftMotorSpeed = 0; //don't move
-    rightMotorVal = 0; //don't move
+    rightMotorSpeed = 0; //don't move
   }
   if (robotEnabled) {//run the following code if the robot is enabled
     if (!wasRobotEnabled) {//the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
@@ -65,8 +63,8 @@ void loop() {//this function runs over and over and is where main code is usuall
     }
     PIDA.Compute();//compute the PID, it changes the variables you set it up with earlier.
     PIDS.Compute();//compute the PID, it changes the variables you set it up with earlier.
-    leftMotorSpeed = motorSpeed + turnSpeedVal;//combine motor speed and turn to find the speed the left motor should go
-    rightMotorSpeed = motorSpeed - turnSpeedVal;//combine motor speed and turn to find the speed the right motor should go
+    leftMotorSpeed = motorSpeedVal + turnSpeedVal;//combine motor speed and turn to find the speed the left motor should go
+    rightMotorSpeed = motorSpeedVal - turnSpeedVal;//combine motor speed and turn to find the speed the right motor should go
   } else {//run the following code if the robot is disabled. this code should turn off anything that moves
     PIDA.SetMode(MANUAL);//turn the PID off
     PIDS.SetMode(MANUAL);//turn the PiD off
