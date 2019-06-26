@@ -1,78 +1,106 @@
-#include <Wire.h>
-#include <PID_v1.h>
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WiFiAP.h>
-#include <AccelStepper.h>
-const char *robotSSID = "SERT_URSA_0";
-const char *robotPass = "sert2521";
-boolean robotEnabled = false;
-boolean enable = false;
-boolean tipped = false;
-int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0; //for MPU6050
-unsigned long lastCalcedMPU6050 = 0;
-float oDPSX, oDPSY, oDPSZ = 0.000;
-float pitch = 0.000;
-int leftSpeed = 0;
-int rightSpeed = 0;
-int motorSpeedVal = 0;
-int speedVal = 0;
-int turnVal = 0;
-float targetPitch = 0.000;
-float PA, IA, DA, PS, IS, DS = 0.0000;
-PID PIDA(&pitch, &motorSpeedVal, &targetPitch, PA, IA, DA, DIRECT);
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, PS, IS, DS, DIRECT);
-AccelStepper leftStepper(AccelStepper::FULL4WIRE, 6, 7, 8, 9);
-AccelStepper rightStepper(AccelStepper::FULL4WIRE, 2, 3, 4, 5);
-WiFiServer server(80);
-void setup() {
-  PIDA.SetMode(AUTOMATIC);
-  PIDS.SetMode(AUTOMATIC);
-  PIDA.SetSampleTime(1);
-  PIDS.SetSampleTime(1);
-  Serial.begin(2000000);//for debug
-  setupMPU6050();
-  zeroMPU6050();
-  leftStepper.setMaxSpeed(4000);//test
-  rightStepper.setMaxSpeed(4000);//test
-  WiFi.softAP(robotSSID, robotPass);
-  IPAddress myIP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
-  Serial.println(myIP);
-  server.begin();
-  Serial.println("Server started");
+//TODO: make code to control the stepper motors (run them at their motor speed vals)
+//TODO: make code to turn on and off the stepper motors
+//TODO: add framework code for handling and decoding control messages from wifi
+float MAX_TIP 33.3//max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
+byte ID 0//robot ID, sent to DS, could be used to identify what unique robot this is, and what attachments it has
+const char *robotSSID = "SERT_URSA_0";//name of robot's wifi hotspot, should be unique between all robots
+const char *robotPass = "sert2521";//password for the robot's wifi network, not very secure but it might discourage random people from connecting and messing up our communication
+#include <Wire.h>//arduino library used for I2C communication with the mpu6050 gyro board Reference for Wire: https://www.arduino.cc/en/Reference/Wire
+#include <PID_v1.h>//arduino library for PID loop, we could write our own, but this library is packaged nicely Library: https://github.com/br3ttb/Arduino-PID-Library Reference: https://playground.arduino.cc/Code/PIDLibrary/
+#include <WiFi.h>//esp32 wifi library
+#include <WiFiClient.h>//esp32 wifi library
+#include <WiFiAP.h>//esp32 wifi library for creating wifi network
+boolean robotEnabled = false;//is the robot enabled? if false, turn off all outputs
+boolean wasRobotEnabled = false; //keep track of whether the robot was enabled last loop to know if it has changed.
+boolean enable = false;//is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
+boolean tipped = false;//has the robot tipped past it's maximum recoverable angle?
+int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0;//for MPU6050 A=acceleration(raw) R=rotation(raw) R_0=values used to zero the gyro on startup
+unsigned long lastCalcedMPU6050 = 0;//micros() value of last orientation read. used to integrate gyro data to get rotation
+float oDPSX, oDPSY, oDPSZ = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
+float pitch = 0.000;//angle of pitch of the robot forward and backwards in degrees. The output from the MPU6050 that matters for self balencing.
+float pitchOffset = 0.000; //subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
+int leftMotorSpeed = 0;//stepper ticks per second that the left motor is currently doing
+int rightMotorSpeed = 0;//stepper ticks per second that the right motor is currently doing
+int motorSpeedVal = 0;//average stepper ticks per second that the two motors should do-how much movement in the forwards/backwards direction should they move-used for balencing
+int speedVal = 0;//how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
+int turnSpeedVal = 0;//difference in speed for each motor-how much should the robot turn (positive=turn right, negative=turn left)
+float targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
+float PA, IA, DA, PS, IS, DS = 0.0000;//PID constants for the Angle and Speed control loops
+PID PIDA(&pitch, &motorSpeedVal, &targetPitch, PA, IA, DA, DIRECT);//setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
+PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, PS, IS, DS, DIRECT);//setup the Speed PID loop
+WiFiServer server(80);//a wifi server on port 80
+void setup() {//this function is run once when the esp32 turns on and can be used to set up other
+  PIDA.SetMode(MANUAL);//PID loop off
+  PIDS.SetMode(MANUAL);//PID loop off
+  PIDA.SetSampleTime(1);//tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
+  PIDS.SetSampleTime(1);//tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
+  Serial.begin(2000000);//for debug Set the serial monitor to the same value or you will see nothing or gibberish.
+  setupMPU6050();//this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
+  zeroMPU6050();//this function averages some gyro readings so later the readings can be calibrated to zero. This function counts on the robot being still, so the robot needs to be powered on while lying on the ground
+  DBserialPrintCurrentCore("setup");//print what core this code is running on. see the declaration of this function lower down for details
+  WiFi.softAP(robotSSID, robotPass);//start wifi network, code may need to be added after this to wait for it to start
+  IPAddress myIP = WiFi.softAPIP();//get the robot's IP address, it should be the same every time
+  Serial.print("AP IP address: ");//Serial.print sends information to your computer over usb, it is useful for making the program show you what it's doing
+  Serial.println(myIP);            //print the robot's IP address over serial to find what it is. it should be the same each time. this IP address will probably need to be coded into the DS
+  server.begin();                  //start the server
+  Serial.println("Server started");//Serial.println is like Serial.print but it adds a newline (enter) so you don't get a single unreadable line
 }
-void loop() { //core 1
-  readMPU6050();
-  PIDA.Compute();
-  PIDS.Compute();
-  leftStepper.setSpeed(motorSpeedVal + turnVal);
-  rightStepper.setSpeed(motorSpeedVal - turnVal);
-  leftStepper.run();
-  rightStepper.run();
+void loop() {//this function runs over and over and is where main code is usuall put. I think the esp32 runs this function on core 1. the balencing control loop will be here, with the goal of keeping this function running as fast as possible
+  readMPU6050();//read the orientation board
+  if (abs(pitch) > MAX_TIP) {//if the robot tilts forwards or backwards beyond the MAX_TIP constant...
+    tipped = true;//...set the tipped boolean to true
+  } else {
+    tipped = false;//...otherwise set it to false
+  }
+  if (tipped) {//if tipped is true... (you don't have to say ==true, it is assumed)
+    robotEnabled = false;//...disable the robot. This is so if the robot falls over, instead of running at full speed trying to right itself as its top skids along the ground, it just disables and can't be enabled until it is righted
+    leftMotorSpeed = 0; //don't move
+    rightMotorVal = 0; //don't move
+  }
+  if (robotEnabled) {//run the following code if the robot is enabled
+    if (!wasRobotEnabled) {//the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
+      //TODO: turn on stepper motors
+      PIDA.SetMode(AUTOMATIC);//turn on the PID
+      PIDS.SetMode(AUTOMATIC);//turn on the PID
+    }
+    PIDA.Compute();//compute the PID, it changes the variables you set it up with earlier.
+    PIDS.Compute();//compute the PID, it changes the variables you set it up with earlier.
+    leftMotorSpeed = motorSpeed + turnSpeedVal;//combine motor speed and turn to find the speed the left motor should go
+    rightMotorSpeed = motorSpeed - turnSpeedVal;//combine motor speed and turn to find the speed the right motor should go
+  } else {//run the following code if the robot is disabled. this code should turn off anything that moves
+    PIDA.SetMode(MANUAL);//turn the PID off
+    PIDS.SetMode(MANUAL);//turn the PiD off
+    leftMotorSpeed = 0; //don't move
+    rightMotorSpeed = 0; //don't move
+    //TODO: turn off stepper motors
+    delay(2000);
+    DBserialPrintCurrentCore("(disabled) loop");//print debugging test of what core the loop is running on
+  }
+  wasRobotEnabled = robotEnabled;
 }
-void DBserialPrintCurrentCore(String msg) {
+
+void DBserialPrintCurrentCore(String msg) {//function for DeBugging, packages and prints the core the function is called from
   Serial.print(msg);
   Serial.print(" running on core #");
-  Serial.println(xPortGetCoreID());
+  Serial.println(xPortGetCoreID());//prints which core this code is running on
 }
-void WiFiEvent(WiFiEvent_t event) {
+void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens
   DBserialPrintCurrentCore("wifi event");
   Serial.print("wifi event: ");
   Serial.println(event);
   Serial.print("WiFi.RSSI=");
-  Serial.println(WiFi.RSSI());
+  Serial.println(WiFi.RSSI());//Recieved Signal Strength Indicator, less negative numbers mean a stronger recieved signal
   WiFiClient client = server.available();
-  if (client) {
+  if (client) {                           //now we're trying to print any data we got over wifi. It would be nice if WiFiEvent can be used for our wifi code. hopefully it gets triggered when a message is recieved
     while (client.available()) {
       char c = client.read();
       Serial.write(c);
     }
   }
 }
-void setupMPU6050() {
-  Wire.begin();//////////////////////setup mpu6050
-  Wire.setClock(400000L);
+void setupMPU6050() {//start I2C communication and send commands to set up the MPU6050.  A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed, and then sending a new register value
+  Wire.begin();//////////////////////setup mpu6050. reference for the mpu6050's registers https://www.invensense.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
+  Wire.setClock(400000L);//send data at a faster clock speed
   Wire.beginTransmission(0x68);
   Wire.write(0x6B);
   Wire.write(0);//wakeup
@@ -83,7 +111,7 @@ void setupMPU6050() {
   Wire.endTransmission(true);
   Wire.beginTransmission(0x68);
   Wire.write(0x19);
-  Wire.write(0x04);//clock divider
+  Wire.write(0x02);//clock divider
   Wire.endTransmission(true);
   Wire.beginTransmission(0x68);
   Wire.write(0x1A);
@@ -92,42 +120,45 @@ void setupMPU6050() {
 }
 void readMPU6050() {
   Wire.beginTransmission(0x68);
-  Wire.write(0x3B);
+  Wire.write(0x3B);//location of first byte of data
   Wire.endTransmission(false);
-  Wire.requestFrom(0x68, 14, true);
-  oAX = Wire.read() << 8 | Wire.read();
+  Wire.requestFrom(0x68, 14, true);//ask for accel and gyro data bytes
+  oAX = Wire.read() << 8 | Wire.read();//read two bytes and put them together into a sixteen bit integer value
   oAY = Wire.read() << 8 | Wire.read();
   oAZ = Wire.read() << 8 | Wire.read();
-  Wire.read(); Wire.read();//throw away temperature
+  Wire.read(); Wire.read();//throw away temperature, it's annoying they put it in the middle here
   oRX = Wire.read() << 8 | Wire.read();
   oRY = Wire.read() << 8 | Wire.read();
   oRZ = Wire.read() << 8 | Wire.read();
-  oDPSX = (oRX - oRX0) * 1000.00 / 32766;//convert to degrees per second
-  oDPSY = (oRY - oRY0) * 1000.00 / 32766;
-  oDPSZ = (oRZ - oRZ0) * 1000.00 / 32766;
-  pitch = .99 * (pitch + oDPSX * (millis() - lastCalcedMPU6050) / 1000.000) + .01 * degrees(atan2(oAY, oAZ));
-  lastCalcedMPU6050 = millis();
+  oDPSX = (oRX - oRX0) * 1000000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
+  oDPSY = (oRY - oRY0) * 1000000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
+  oDPSZ = (oRZ - oRZ0) * 1000000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
+  if (micros() > lastCalcedMPU6050) {//try to handle micros' long overflow in a harmless way
+    lastCalcedMPU6050 = micros() - 10;
+  }
+  pitch = .99 * ((pitch - pitchOffset) + oDPSX * (micros() - lastCalcedMPU6050) / 1000000.000) + .01 * (degrees(atan2(oAY, oAZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
+  lastCalcedMPU6050 = micros();//record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
-void zeroMPU6050() {
+void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
   oRX0 = 0; oRY0 = 0; oRZ0 = 0;
-  for (int i = 0; i < 50; i++) {
+  for (int i = 0; i < 50; i++) {//run the following code 50 times so we can get many measurements to average into an offset value
     Wire.beginTransmission(0x68);
     Wire.write(0x3B);
     Wire.endTransmission(false);
     Wire.requestFrom(0x68, 14, true);
-    oAX = Wire.read() << 8 | Wire.read();
+    oAX = Wire.read() << 8 | Wire.read();//same reading code as earlier
     oAY = Wire.read() << 8 | Wire.read();
     oAZ = Wire.read() << 8 | Wire.read();
     Wire.read(); Wire.read();//throw away temperature
     oRX = Wire.read() << 8 | Wire.read();
     oRY = Wire.read() << 8 | Wire.read();
     oRZ = Wire.read() << 8 | Wire.read();
-    oRX0 += oRX;
+    oRX0 += oRX;//add all the reads together
     oRY0 += oRY;
     oRZ0 += oRZ;
-    delay(10 + i / 5);
+    delay(10 + i / 5);//add some time between reads, changing the delay each time a bit to be less likely to be thrown by a periodic oscillation
   }
-  oRX0 /= 50;
+  oRX0 /= 50;//devide by the number of reads that were taken to get an average value
   oRY0 /= 50;
   oRZ0 /= 50;
 }
