@@ -1,4 +1,4 @@
-float MAX_TIP = 33.3; //max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
+#define MAX_TIP 33.3 //max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
 #define ID 0//robot ID, sent to DS, could be used to identify what unique robot this is, and what attachments it has
 const char *robotSSID = "SERT_URSA_0";//name of robot's wifi hotspot, should be unique between all robots
 const char *robotPass = "sert2521";//password for the robot's wifi network, not very secure but it might discourage random people from connecting and messing up our communication
