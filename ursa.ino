@@ -194,11 +194,50 @@ float parseFl(byte* arrayPointer, int* i) {//declare a function that returns a (
   } d;//d is the union, d.b acceses the byte array, d.v acceses the float
   d.b[0] = *(arrayPointer + *i); //read the first byte from the array
   i++;//increment i to the next position in the array
-  d.b[1] = *(arrayPointer + *i);
+  d.b[1] = *(arrayPointer + *i);//read the second byte from the array
   i++;//i to 3rd position now
-  d.b[2] = *(arrayPointer + *i);
+  d.b[2] = *(arrayPointer + *i);//read the third byte from the array
   i++;//i to 4th position now
-  d.b[3] = *(arrayPointer + *i);
+  d.b[3] = *(arrayPointer + *i);//read the fourth (last) byte from the array
   i++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
   return d.v;//return the float form of union d
+}
+
+void arrayBl(boolean msg, byte* arrayPointer, int* i) { //declare a function that returns a boolean and will be given the location of an array and what element of the array to start at
+  if (msg) {//if true
+    *(arrayPointer + *i) = 1;//set the ith element of the array to 1
+  } else {//if false
+    *(arrayPointer + *i) = 0;//set the ith element of the array to 0
+  }
+  i++;//increment i for the next position in the array for the next piece of data
+}
+void arrayBy(byte msg, byte* arrayPointer, int* i) {//declare a function that returns a byte and will be given the location of an array and what element of the array to start at
+  *(arrayPointer + *i) = msg;//set the ith element of the array to the passed in msg byte
+  i++;//increment the counter for the next value
+}
+void arrayIn(int msg, byte* arrayPointer, int* i) {//declare a function that returns an int and will be given the location of an array and what element of the array to start at
+  union {//this lets us translate between two variables (equal size, but one's two bytes in an array, and one's a two byte int  Reference for unions: https://www.mcgurrin.info/robots/127/
+    byte b[2];
+    int v;
+  } d;//d is the union, d.b acceses the byte array, d.v acceses the int
+  d.v = msg;
+  *(arrayPointer + *i) = d.b[0];//set the first byte of the array equal to the first byte of the union
+  i++;//increment i to the location of the second byte
+  *(arrayPointer + *i) = d.b[1]; //set the second byte
+  i++;//shift i the second time so it's ready for the next function
+}
+void arrayFl(float msg, byte* arrayPointer, int* i) {//declare a function that returns a (4 byte) float and will be given the location of an array and what element of the array to start at
+  union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
+    byte b[4];
+    float v;
+  } d;//d is the union, d.b acceses the byte array, d.v acceses the float
+  d.v = msg;//put the value into the union
+  *(arrayPointer + *i) = d.b[0];//set the first byte of the array equal to the first byte of the union
+  i++;//increment i to the next position in the array
+  *(arrayPointer + *i) = d.b[1];//set second byte
+  i++;//i to 3rd position now
+  *(arrayPointer + *i) = d.b[2];//set third byte
+  i++;//i to 4th position now
+  *(arrayPointer + *i) = d.b[3];//set fourth byte
+  i++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
 }
