@@ -1,5 +1,6 @@
 #define MAX_TIP 33.3 //max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
-#define ID 0//robot ID, sent to DS, could be used to identify what unique robot this is, and what attachments it has
+#define ID 0//unique robot ID, sent to DS
+#define MODEL_NO 0//unique to configuration of robot-DS can use it to look up what extra features are available
 #define MAX_SPEED 4000 //maximum steps per second that the motors can do
 #define leftStepPin GPIO_NUM_32//connected to left stepper driver's STEP pin. RISING low to high triggers step It's only happy if the number is prefixed with GPIO_NUM_
 #define leftDirPin GPIO_NUM_33//left stepper driver's DIR pin. changes which direction the motor is driven
