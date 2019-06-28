@@ -1,23 +1,31 @@
-#define MAX_TIP 33.3 //max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
-#define ID 0//unique robot ID, sent to DS
-#define MODEL_NO 0//unique to configuration of robot-DS can use it to look up what extra features are available
-#define MAX_SPEED 4000 //maximum steps per second that the motors can do
-#define leftStepPin GPIO_NUM_32//connected to left stepper driver's STEP pin. RISING low to high triggers step It's only happy if the number is prefixed with GPIO_NUM_
-#define leftDirPin GPIO_NUM_33//left stepper driver's DIR pin. changes which direction the motor is driven
-#define rightStepPin GPIO_NUM_25
-#define rightDirPin GPIO_NUM_26
-const char *robotSSID = "SERT_URSA_0";//unique name of robot's wifi hotspot
-const char *robotPass = "sert2521";//password for the robot's wifi network, not very secure but it might discourage random people from connecting and messing up our communication
-#include "driver/rmt.h"//include library used for stepper pulses Reference: https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/peripherals/rmt.html http://www.buildlog.net/blog/2017/11/esp32-sending-short-pulses-with-the-rmt/ 
-#include <Wire.h>//arduino library used for I2C communication with the mpu6050 gyro board Reference for Wire: https://www.arduino.cc/en/Reference/Wire
-#include <PID_v1.h>//arduino library for PID loop, we could write our own, but this library is packaged nicely. Library: https://github.com/br3ttb/Arduino-PID-Library Reference: https://playground.arduino.cc/Code/PIDLibrary/
-#include <WiFi.h>//esp32 wifi library
-#include <WiFiClient.h>//esp32 wifi library
-#include <WiFiAP.h>//esp32 wifi library for creating wifi network
-hw_timer_t * leftStepTimer = NULL;//Reference: https://github.com/espressif/arduino-esp32/blob/master/libraries/ESP32/examples/Timer/RepeatTimer/RepeatTimer.ino
-hw_timer_t * rightStepTimer = NULL;
-rmt_config_t configL;//settings for RMT pulse for stepper motor
-rmt_item32_t itemsL[1];//holds definition of pulse for stepper motor
+#include "driver/rmt.h"
+#include <Wire.h>
+#include <PID_v1.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiAP.h>
+
+#define ID 0            // unique robot ID, sent to DS
+#define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
+#define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
+#define MAX_TIP 33.3    // max angle the robot will attempt to recover from -- if passed, robot will disable
+
+// The following lines define STEP pins and DIR pins. STEP pins are used to
+// trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
+// change the direction at which the motor is driver.
+#define LEFT_STEP_PIN GPIO_NUM_32
+#define LEFT_DIR_PIN GPIO_NUM_33
+#define RIGHT_STEP_PIN GPIO_NUM_25
+#define RIGHT_DIR_PIN GPIO_NUM_26
+
+// Define the SSID and password for the robot's access point
+const char *robotSSID = "SERT_URSA_0";
+const char *robotPass = "sert2521";
+
+hw_timer_t *leftStepTimer = NULL;
+hw_timer_t *rightStepTimer = NULL;
+rmt_config_t configL;   // settings for RMT pulse for stepper motor
+rmt_item32_t itemsL[1]; // holds definition of pulse for stepper motor
 rmt_config_t configR;
 rmt_item32_t itemsR[1];
 boolean robotEnabled = false;//enable output?
