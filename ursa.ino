@@ -19,7 +19,7 @@
 #define RIGHT_DIR_PIN GPIO_NUM_26
 
 // Define the SSID and password for the robot's access point
-char robotSSID[12];//string and ROBOT_ID put in here in setup
+char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
 
 hw_timer_t *leftStepTimer = NULL;
@@ -89,7 +89,8 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
   rmt_write_items(configR.channel, itemsR, 1, 0);//start pulse
 }
 void setup() {
-  sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);//create ssid from robot string and robot id
+  sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
+
   Serial.begin(2000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
