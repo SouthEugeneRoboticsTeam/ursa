@@ -8,7 +8,7 @@
 #define rightDirPin GPIO_NUM_26
 const char *robotSSID = "SERT_URSA_0";//unique name of robot's wifi hotspot
 const char *robotPass = "sert2521";//password for the robot's wifi network, not very secure but it might discourage random people from connecting and messing up our communication
-#include "driver/rmt.h"//include library used for stepper pulses Reference: https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/peripherals/rmt.html http://www.buildlog.net/blog/2017/11/esp32-sending-short-pulses-with-the-rmt/ 
+#include "driver/rmt.h"//include library used for stepper pulses Reference: https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/peripherals/rmt.html http://www.buildlog.net/blog/2017/11/esp32-sending-short-pulses-with-the-rmt/
 #include <Wire.h>//arduino library used for I2C communication with the mpu6050 gyro board Reference for Wire: https://www.arduino.cc/en/Reference/Wire
 #include <PID_v1.h>//arduino library for PID loop, we could write our own, but this library is packaged nicely. Library: https://github.com/br3ttb/Arduino-PID-Library Reference: https://playground.arduino.cc/Code/PIDLibrary/
 #include <WiFi.h>//esp32 wifi library
