@@ -31,7 +31,7 @@ rmt_item32_t itemsR[1];
 byte voltage = 0; //0v=0 13v=255
 int signalStrength = -100;
 volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
-volatile boolean receivedNewData = true;//set true when data gotten, set false when parsed
+volatile boolean receivedNewData = false;//set true when data gotten, set false when parsed
 volatile byte dataToSend[50] = {0}; //array to hold data to send to DS.
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
@@ -243,7 +243,7 @@ void DBserialPrintCurrentCore(String msg) { //function for DeBugging, packages a
   Serial.print(" running on core #");
   Serial.println(xPortGetCoreID());//prints which core this code is running on
 }
-void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens
+void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens, including recieving a message
   DBserialPrintCurrentCore("wifi event");
   Serial.print("wifi event: ");
   Serial.println(event);
@@ -251,7 +251,7 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
   Serial.println(WiFi.RSSI());//Recieved Signal Strength Indicator, less negative numbers mean a stronger recieved signal
   //wifi recieve code:
   WiFiClient client = server.available();
-  if (client) {                           //now we're trying to print any data we got over wifi. It would be nice if WiFiEvent can be used for our wifi code. hopefully it gets triggered when a message is recieved
+  if (client) {
     if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
       Serial.println("got wifi recieve mutex");
       byte count = 0;
