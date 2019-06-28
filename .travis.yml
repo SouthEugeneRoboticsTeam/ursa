@@ -15,7 +15,7 @@ before_install:
   - sudo iptables -A OUTPUT -o lo -j ACCEPT
   - sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 install:
-  - arduino --install-library "PIDLibrary"
+  - arduino --install-library "PID"
   - pip install -U cpplint
 script:
   - make lint
