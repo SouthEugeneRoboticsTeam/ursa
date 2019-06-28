@@ -8,11 +8,11 @@
 #define ID 0            // unique robot ID, sent to DS
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
 #define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
-#define MAX_TIP 33.3    // max angle the robot will attempt to recover from -- if passed, robot will disable
+#define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
-// change the direction at which the motor is driver.
+// change the direction at which the motor is driven.
 #define LEFT_STEP_PIN GPIO_NUM_32
 #define LEFT_DIR_PIN GPIO_NUM_33
 #define RIGHT_STEP_PIN GPIO_NUM_25
@@ -28,7 +28,19 @@ rmt_config_t configL;   // settings for RMT pulse for stepper motor
 rmt_item32_t itemsL[1]; // holds definition of pulse for stepper motor
 rmt_config_t configR;
 rmt_item32_t itemsR[1];
-boolean robotEnabled = false;//enable output?
+byte voltage = 0; //0v=0 13v=255
+int signalStrength = -100;
+volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
+volatile boolean receivedNewData = true;//set true when data gotten, set false when parsed
+volatile byte dataToSend[50] = {0}; //array to hold data to send to DS.
+//since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
+SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
+SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
+byte numAuxRecv = 0; //how many bytes of control data for extra things
+byte auxRecvArray[12] = {0}; //size of numAuxRecv
+byte numSendAux = 0; //how many bytes of sensor data to send
+byte auxSendArray[12] = {0}; //size of numAuxSend
+boolean robotEnabled = false;//enable outputs?
 boolean wasRobotEnabled = false; //to know if robotEnabled has changed
 boolean enable = false;//is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
@@ -53,9 +65,9 @@ WiFiServer server(80);
 void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
   if ((leftMotorSpeed >= 0) != leftForwardBl) {//if direction has changed
     if (leftMotorSpeed >= 0) {
-      digitalWrite(leftDirPin, HIGH);
+      digitalWrite(LEFT_DIR_PIN, HIGH);
     } else {
-      digitalWrite(leftDirPin, LOW);
+      digitalWrite(LEFT_DIR_PIN, LOW);
     }
     leftForwardBl = (leftMotorSpeed >= 0);//save direction for next time
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
@@ -66,9 +78,9 @@ void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
 void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
   if ((rightMotorSpeed >= 0) != rightForwardBl) {//if direction has changed
     if (rightMotorSpeed >= 0) {
-      digitalWrite(rightDirPin, HIGH);
+      digitalWrite(RIGHT_DIR_PIN, HIGH);
     } else {
-      digitalWrite(rightDirPin, LOW);
+      digitalWrite(RIGHT_DIR_PIN, LOW);
     }
     rightForwardBl = (rightMotorSpeed >= 0);//save direction for next time
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
@@ -78,10 +90,10 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
 }
 void setup() {
   Serial.begin(2000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
-  pinMode(leftDirPin, OUTPUT);
-  pinMode(rightDirPin, OUTPUT);
-  pinMode(leftStepPin, OUTPUT);
-  pinMode(rightStepPin, OUTPUT);
+  pinMode(LEFT_STEP_PIN, OUTPUT);
+  pinMode(RIGHT_STEP_PIN, OUTPUT);
+  pinMode(LEFT_DIR_PIN, OUTPUT);
+  pinMode(RIGHT_DIR_PIN, OUTPUT);
   leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
@@ -182,8 +194,7 @@ void parseDataReceived() {//put parse functions here
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = parseBy(counter);
   }
-  settings = parseBl(counter); //will new PID settings be sent next
-  if (settings) {
+  if (parseBl(counter)) {
     kPA = parseFl(counter);
     kIA = parseFl(counter);
     kDA = parseFl(counter);
@@ -195,7 +206,7 @@ void parseDataReceived() {//put parse functions here
 void setupStepperRMTs() {
   configL.rmt_mode = RMT_MODE_TX;
   configL.channel = RMT_CHANNEL_0;
-  configL.gpio_num = leftStepPin;
+  configL.gpio_num = LEFT_STEP_PIN;
   configL.mem_block_num = 1;
   configL.tx_config.loop_en = 0;
   configL.tx_config.carrier_en = 0;
@@ -212,7 +223,7 @@ void setupStepperRMTs() {
 
   configR.rmt_mode = RMT_MODE_TX;
   configR.channel = RMT_CHANNEL_0;
-  configR.gpio_num = rightStepPin;
+  configR.gpio_num = RIGHT_STEP_PIN;
   configR.mem_block_num = 1;
   configR.tx_config.loop_en = 0;
   configR.tx_config.carrier_en = 0;
@@ -243,16 +254,16 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
   if (client) {                           //now we're trying to print any data we got over wifi. It would be nice if WiFiEvent can be used for our wifi code. hopefully it gets triggered when a message is recieved
     if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
       Serial.println("got wifi recieve mutex");
-      recvdDataSize = 0;
+      byte count = 0;
       while (client.available()) {
         char c = client.read();
-        recvdData[recvdDataSize] = c;
-        recvdDataSize++;
+        recvdData[count] = c;
+        count++;
         receivedNewData = true;
         Serial.write(c);
       }
-      for (int i = 0; i < tosendDataSize; i++) {//send response, maybe change to go less frequently
-        client.write(tosendData[i]);
+      for (int i = 0; i < count; i++) {//send response, maybe change to go less frequently
+        client.write(dataToSend[i]);
       }
       xSemaphoreGive(mutexRecv);
     }
@@ -360,11 +371,11 @@ float parseFl(byte &pos) {//return float from 4 bytes starting at pos position i
   return d.v;
 }
 void sendBl(boolean msg, byte &pos) {//add a boolean to the tosendData array
-  tosendData[pos] = msg;
+  dataToSend[pos] = msg;
   pos++;
 }
 void sendBy(byte msg, byte &pos) {//add a byte to the tosendData array
-  tosendData[pos] = msg;
+  dataToSend[pos] = msg;
   pos++;
 }
 void sendIn(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
@@ -373,9 +384,9 @@ void sendIn(int msg, byte &pos) {//add an int to the tosendData array (two bytes
     int v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;//put the value into the union as an int
-  tosendData[pos] = d.b[0];
+  dataToSend[pos] = d.b[0];
   pos++;
-  tosendData[pos] = d.b[1];
+  dataToSend[pos] = d.b[1];
   pos++;
 }
 void sendFl(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
@@ -384,12 +395,12 @@ void sendFl(float msg, byte &pos) {//add a float to the tosendData array (four b
     float v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the float
   d.v = msg;
-  tosendData[pos] = d.b[0];
+  dataToSend[pos] = d.b[0];
   pos++;
-  tosendData[pos] = d.b[1];
+  dataToSend[pos] = d.b[1];
   pos++;
-  tosendData[pos] = d.b[2];
+  dataToSend[pos] = d.b[2];
   pos++;
-  tosendData[pos] = d.b[3];
+  dataToSend[pos] = d.b[3];
   pos++;
 }
