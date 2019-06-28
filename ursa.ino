@@ -8,11 +8,11 @@
 #define ID 0            // unique robot ID, sent to DS
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
 #define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
-#define MAX_TIP 33.3    // max angle the robot will attempt to recover from -- if passed, robot will disable
+#define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
-// change the direction at which the motor is driver.
+// change the direction at which the motor is driven.
 #define LEFT_STEP_PIN GPIO_NUM_32
 #define LEFT_DIR_PIN GPIO_NUM_33
 #define RIGHT_STEP_PIN GPIO_NUM_25
@@ -28,7 +28,19 @@ rmt_config_t configL;   // settings for RMT pulse for stepper motor
 rmt_item32_t itemsL[1]; // holds definition of pulse for stepper motor
 rmt_config_t configR;
 rmt_item32_t itemsR[1];
-boolean robotEnabled = false;//enable output?
+byte voltage = 0; //0v=0 13v=255
+int signalStrength = -100;
+volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
+volatile boolean receivedNewData = false;//set true when data gotten, set false when parsed
+volatile byte dataToSend[50] = {0}; //array to hold data to send to DS.
+//since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
+SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
+SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
+byte numAuxRecv = 0; //how many bytes of control data for extra things
+byte auxRecvArray[12] = {0}; //size of numAuxRecv
+byte numSendAux = 0; //how many bytes of sensor data to send
+byte auxSendArray[12] = {0}; //size of numAuxSend
+boolean robotEnabled = false;//enable outputs?
 boolean wasRobotEnabled = false; //to know if robotEnabled has changed
 boolean enable = false;//is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
@@ -53,9 +65,9 @@ WiFiServer server(80);
 void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
   if ((leftMotorSpeed >= 0) != leftForwardBl) {//if direction has changed
     if (leftMotorSpeed >= 0) {
-      digitalWrite(leftDirPin, HIGH);
+      digitalWrite(LEFT_DIR_PIN, HIGH);
     } else {
-      digitalWrite(leftDirPin, LOW);
+      digitalWrite(LEFT_DIR_PIN, LOW);
     }
     leftForwardBl = (leftMotorSpeed >= 0);//save direction for next time
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
@@ -66,9 +78,9 @@ void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
 void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
   if ((rightMotorSpeed >= 0) != rightForwardBl) {//if direction has changed
     if (rightMotorSpeed >= 0) {
-      digitalWrite(rightDirPin, HIGH);
+      digitalWrite(RIGHT_DIR_PIN, HIGH);
     } else {
-      digitalWrite(rightDirPin, LOW);
+      digitalWrite(RIGHT_DIR_PIN, LOW);
     }
     rightForwardBl = (rightMotorSpeed >= 0);//save direction for next time
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
@@ -78,10 +90,10 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
 }
 void setup() {
   Serial.begin(2000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
-  pinMode(leftDirPin, OUTPUT);
-  pinMode(rightDirPin, OUTPUT);
-  pinMode(leftStepPin, OUTPUT);
-  pinMode(rightStepPin, OUTPUT);
+  pinMode(LEFT_STEP_PIN, OUTPUT);
+  pinMode(RIGHT_STEP_PIN, OUTPUT);
+  pinMode(LEFT_DIR_PIN, OUTPUT);
+  pinMode(RIGHT_DIR_PIN, OUTPUT);
   leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
@@ -115,14 +127,23 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   if (tipped) {
     robotEnabled = false;//if the robot falls over, instead of running at full speed trying to right itself as it skids along the ground, it just disables
   }
+  if (receivedNewData) {
+    if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
+      parseDataReceived();
+      createDataToSend();
+      xSemaphoreGive(mutexRecv);
+    }
+  }
   if (robotEnabled) {//run the following code if the robot is enabled
     if (!wasRobotEnabled) {//the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       //TODO: turn on stepper motors
       PIDA.SetMode(AUTOMATIC);//turn on the PID
       PIDS.SetMode(AUTOMATIC);//turn on the PID
     }
-    PIDA.Compute();//compute the PID, it changes the variables you set it up with earlier.
-    PIDS.Compute();//compute the PID, it changes the variables you set it up with earlier.
+    PIDA.SetTunings(kPA, kIA, kDA);
+    PIDS.SetTunings(kPS, kIS, kDS);
+    PIDS.Compute(); //compute the PID, it changes the variables you set it up with earlier.
+    PIDA.Compute();
     leftMotorSpeed = constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED); //combine motor speed and turn to find the speed the left motor should go
     rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED); //combine motor speed and turn to find the speed the right motor should go
     if (abs(leftMotorSpeed) >= 1) {
@@ -148,10 +169,44 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   }
   wasRobotEnabled = robotEnabled;
 }
+void createDataToSend() {//put send functions here
+  byte counter = 0;
+  sendBl(robotEnabled, counter);
+  sendBl(tipped, counter);
+  sendBy(ID, counter);
+  sendBy(MODEL_NO, counter);
+  sendFl(pitch, counter);
+  sendBy(voltage, counter);
+  sendBy(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
+  sendIn(leftMotorSpeed, counter);
+  sendIn(rightMotorSpeed, counter);
+  sendBy(numSendAux, counter);//how many bytes of extra data
+  for (int i = 0; i < numSendAux; i++) {
+    sendBy(auxSendArray[numSendAux], counter); //extra data
+  }
+}
+void parseDataReceived() {//put parse functions here
+  byte counter = 0;
+  enable = parseBl(counter);
+  speedVal = map(parseBy(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
+  turnSpeedVal = map(parseBy(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
+  numAuxRecv = parseBy(counter); //how many bytes of control data for extra things
+  for (int i = 0; i < numAuxRecv; i++) {
+    auxRecvArray[i] = parseBy(counter);
+  }
+  if (parseBl(counter)) {
+    kPA = parseFl(counter);
+    kIA = parseFl(counter);
+    kDA = parseFl(counter);
+    kPS = parseFl(counter);
+    kIS = parseFl(counter);
+    kDS = parseFl(counter);
+  }
+}
 void setupStepperRMTs() {
   configL.rmt_mode = RMT_MODE_TX;
   configL.channel = RMT_CHANNEL_0;
-  configL.gpio_num = leftStepPin;
+  configL.gpio_num = LEFT_STEP_PIN;
   configL.mem_block_num = 1;
   configL.tx_config.loop_en = 0;
   configL.tx_config.carrier_en = 0;
@@ -168,7 +223,7 @@ void setupStepperRMTs() {
 
   configR.rmt_mode = RMT_MODE_TX;
   configR.channel = RMT_CHANNEL_0;
-  configR.gpio_num = rightStepPin;
+  configR.gpio_num = RIGHT_STEP_PIN;
   configR.mem_block_num = 1;
   configR.tx_config.loop_en = 0;
   configR.tx_config.carrier_en = 0;
@@ -188,18 +243,31 @@ void DBserialPrintCurrentCore(String msg) { //function for DeBugging, packages a
   Serial.print(" running on core #");
   Serial.println(xPortGetCoreID());//prints which core this code is running on
 }
-void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens
+void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens, including recieving a message
   DBserialPrintCurrentCore("wifi event");
   Serial.print("wifi event: ");
   Serial.println(event);
   Serial.print("WiFi.RSSI=");
   Serial.println(WiFi.RSSI());//Recieved Signal Strength Indicator, less negative numbers mean a stronger recieved signal
+  //wifi recieve code:
   WiFiClient client = server.available();
-  if (client) {                           //now we're trying to print any data we got over wifi. It would be nice if WiFiEvent can be used for our wifi code. hopefully it gets triggered when a message is recieved
-    while (client.available()) {
-      char c = client.read();
-      Serial.write(c);
+  if (client) {
+    if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
+      Serial.println("got wifi recieve mutex");
+      byte count = 0;
+      while (client.available()) {
+        char c = client.read();
+        recvdData[count] = c;
+        count++;
+        receivedNewData = true;
+        Serial.write(c);
+      }
+      for (int i = 0; i < count; i++) {//send response, maybe change to go less frequently
+        client.write(dataToSend[i]);
+      }
+      xSemaphoreGive(mutexRecv);
     }
+    Serial.println(" wifi end");
   }
 }
 void setupMPU6050() {//start I2C communication and send commands to set up the MPU6050.  A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed, and then sending a new register value
@@ -266,83 +334,73 @@ void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift.
   oRY0 /= 50;
   oRZ0 /= 50;
 }
-boolean parseBl(byte * arrayPointer, int* i) { //declare a function that returns a boolean and will be given the location of an array and what element of the array to start at
-  byte msg = *(arrayPointer + *i); //read the byte at the location and element given
-  if (msg == '0') {
-    return false;
-  }
-  if (msg == '1') {
-    return true;
-  }
-  i++;
-  return false;//if anything else, default to false
+boolean parseBl(byte &pos) {//return boolean at pos position in recvdData
+  byte msg = recvdData[pos];
+  pos++;//increment the counter for the next value
+  return (msg == 1);
 }
-byte parseBy(byte * arrayPointer, int* i) { //declare a function that returns a byte and will be given the location of an array and what element of the array to start at
-  byte msg = *(arrayPointer + *i); //read the byte from the array given at the location given (kind of a silly function but it will be nice for consistency between other data types
-  i++;//increment the counter for the next value
+byte parseBy(byte &pos) {//return byte at pos position in recvdData
+  byte msg = recvdData[pos];
+  pos++;//increment the counter for the next value
   return msg;
 }
-int parseIn(byte * arrayPointer, int* i) { //declare a function that returns an int and will be given the location of an array and what element of the array to start at
-  union {//this lets us translate between two variables (equal size, but one's two bytes in an array, and one's a two byte int  Reference for unions: https://www.mcgurrin.info/robots/127/
+int parseIn(byte &pos) { //return int from two bytes starting at pos position in recvdData
+  union {//this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[2];
     int v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the int
-  d.b[0] = *(arrayPointer + *i); //read the first byte
-  i++;//increment i to the location of the second byte
-  d.b[1] = *(arrayPointer + *i); //read the second byte
-  i++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
+  d.b[0] = recvdData[pos]; //read the first byte
+  pos++;//increment i to the location of the second byte
+  d.b[1] = recvdData[pos]; //read the second byte
+  pos++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
   return d.v;//return the int form of union d
 }
-float parseFl(byte * arrayPointer, int* i) { //declare a function that returns a (4 byte) float and will be given the location of an array and what element of the array to start at
-  union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
+float parseFl(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
+  union {//this lets us translate between two variable types (equal size, but one's 4 bytes in an array, and one's a 4 byte float) Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the float
-  d.b[0] = *(arrayPointer + *i);
-  i++;
-  d.b[1] = *(arrayPointer + *i);
-  i++;
-  d.b[2] = *(arrayPointer + *i);
-  i++;
-  d.b[3] = *(arrayPointer + *i);
-  i++;
+  d.b[0] = recvdData[pos];
+  pos++;
+  d.b[1] = recvdData[pos];
+  pos++;
+  d.b[2] = recvdData[pos];
+  pos++;
+  d.b[3] = recvdData[pos];
+  pos++;
   return d.v;
 }
-void arrayBl(boolean msg, byte * arrayPointer, int* i) { //declare a function that returns a boolean and will be given the location of an array and what element of the array to start at
-  if (msg) {
-    *(arrayPointer + *i) = 1;//set the ith element of the array to 1
-  } else {
-    *(arrayPointer + *i) = 0;
-  }
-  i++;
+void sendBl(boolean msg, byte &pos) {//add a boolean to the tosendData array
+  dataToSend[pos] = msg;
+  pos++;
 }
-void arrayBy(byte msg, byte * arrayPointer, int* i) { //declare a function that returns a byte and will be given the location of an array and what element of the array to start at
-  *(arrayPointer + *i) = msg;
-  i++;
+void sendBy(byte msg, byte &pos) {//add a byte to the tosendData array
+  dataToSend[pos] = msg;
+  pos++;
 }
-void arrayIn(int msg, byte * arrayPointer, int* i) { //declare a function that returns an int and will be given the location of an array and what element of the array to start at
+void sendIn(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
   union {
     byte b[2];
     int v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;//put the value into the union as an int
-  *(arrayPointer + *i) = d.b[0];
-  i++;
-  *(arrayPointer + *i) = d.b[1];
-  i++;
+  dataToSend[pos] = d.b[0];
+  pos++;
+  dataToSend[pos] = d.b[1];
+  pos++;
 }
-void arrayFl(float msg, byte * arrayPointer, int* i) { //declare a function that returns a (4 byte) float and will be given the location of an array and what element of the array to start at
+void sendFl(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
   union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the float
   d.v = msg;
-  *(arrayPointer + *i) = d.b[0];
-  i++;
-  *(arrayPointer + *i) = d.b[1];
-  i++;
-  *(arrayPointer + *i) = d.b[2];
-  i++;
-  *(arrayPointer + *i) = d.b[3];
-  i++;
+  dataToSend[pos] = d.b[0];
+  pos++;
+  dataToSend[pos] = d.b[1];
+  pos++;
+  dataToSend[pos] = d.b[2];
+  pos++;
+  dataToSend[pos] = d.b[3];
+  pos++;
 }
