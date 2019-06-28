@@ -1,40 +1,33 @@
-#define MAX_TIP 33.3 //max angle the robot might recover from, if this angle is passed,the robot disables to not keep skidding along the ground
-#define ID 0//unique robot ID, sent to DS
-#define MODEL_NO 0//unique to configuration of robot-DS can use it to look up what extra features are available
-#define MAX_SPEED 4000 //maximum steps per second that the motors can do
-#define leftStepPin GPIO_NUM_32//connected to left stepper driver's STEP pin. RISING low to high triggers step It's only happy if the number is prefixed with GPIO_NUM_
-#define leftDirPin GPIO_NUM_33//left stepper driver's DIR pin. changes which direction the motor is driven
-#define rightStepPin GPIO_NUM_25
-#define rightDirPin GPIO_NUM_26
-const char *robotSSID = "SERT_URSA_0";//unique name of robot's wifi hotspot
-const char *robotPass = "sert2521";//password for the robot's wifi network, not very secure but it might discourage random people from connecting and messing up our communication
-#include "driver/rmt.h"//include library used for stepper pulses Reference: https://docs.espressif.com/projects/esp-idf/en/latest/api-reference/peripherals/rmt.html http://www.buildlog.net/blog/2017/11/esp32-sending-short-pulses-with-the-rmt/ 
-#include <Wire.h>//arduino library used for I2C communication with the mpu6050 gyro board Reference for Wire: https://www.arduino.cc/en/Reference/Wire
-#include <PID_v1.h>//arduino library for PID loop, we could write our own, but this library is packaged nicely. Library: https://github.com/br3ttb/Arduino-PID-Library Reference: https://playground.arduino.cc/Code/PIDLibrary/
-#include <WiFi.h>//esp32 wifi library
-#include <WiFiClient.h>//esp32 wifi library
-#include <WiFiAP.h>//esp32 wifi library for creating wifi network
-hw_timer_t * leftStepTimer = NULL;//Reference: https://github.com/espressif/arduino-esp32/blob/master/libraries/ESP32/examples/Timer/RepeatTimer/RepeatTimer.ino
-hw_timer_t * rightStepTimer = NULL;
-rmt_config_t configL;//settings for RMT pulse for stepper motor
-rmt_item32_t itemsL[1];//holds definition of pulse for stepper motor
+#include "driver/rmt.h"
+#include <Wire.h>
+#include <PID_v1.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiAP.h>
+
+#define ID 0            // unique robot ID, sent to DS
+#define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
+#define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
+#define MAX_TIP 33.3    // max angle the robot will attempt to recover from -- if passed, robot will disable
+
+// The following lines define STEP pins and DIR pins. STEP pins are used to
+// trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
+// change the direction at which the motor is driver.
+#define LEFT_STEP_PIN GPIO_NUM_32
+#define LEFT_DIR_PIN GPIO_NUM_33
+#define RIGHT_STEP_PIN GPIO_NUM_25
+#define RIGHT_DIR_PIN GPIO_NUM_26
+
+// Define the SSID and password for the robot's access point
+const char *robotSSID = "SERT_URSA_0";
+const char *robotPass = "sert2521";
+
+hw_timer_t *leftStepTimer = NULL;
+hw_timer_t *rightStepTimer = NULL;
+rmt_config_t configL;   // settings for RMT pulse for stepper motor
+rmt_item32_t itemsL[1]; // holds definition of pulse for stepper motor
 rmt_config_t configR;
 rmt_item32_t itemsR[1];
-byte voltage = 0; //0v=0 13v=255
-int signalStrength = -100;
-volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
-volatile byte recvdDataSize = 0; //how many bytes of the array were actually filled with a message from the DS
-volatile boolean receivedNewData = true;//set true when data gotten, set false when parsed
-volatile byte tosendData[50] = {0}; //array to hold data to send to DS.
-volatile byte tosendDataSize = 0; //how many bytes of the array are actually being used and need to be sent
-//since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
-SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
-byte numAuxRecv = 0; //how many bytes of control data for extra things
-byte auxRecvArray[12] = {0}; //size of numAuxRecv
-byte numSendAux = 0; //how many bytes of sensor data to send
-byte auxSendArray[12] = {0}; //size of numAuxSend
-boolean settings = false; //will new PID settings be sent next
 boolean robotEnabled = false;//enable output?
 boolean wasRobotEnabled = false; //to know if robotEnabled has changed
 boolean enable = false;//is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
@@ -44,12 +37,12 @@ unsigned long lastCalcedMPU6050 = 0;//micros() value of last orientation read. u
 double oDPSX, oDPSY, oDPSZ = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
 double pitch = 0.000;//output (in degrees) from the MPU6050 reading code. matters for self balencing.
 float pitchOffset = 0.000; //subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
-volatile int leftMotorSpeed = 0;//stepper ticks per second that the left motor is currently doing. "volatile" qualifier because used in an interrupt
+volatile int leftMotorSpeed = 0;//stepper ticks per second that the left motor is currently doing "volatile" because used in an interrupt
 volatile int rightMotorSpeed = 0;
 volatile boolean rightForwardBl = false;//was the motor moving forwards last time the interrupt was called
 volatile boolean leftForwardBl = false;
 double motorSpeedVal = 0;//how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
-double speedVal = 0;//goal for how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
+double speedVal = 0;//how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;//(positive=turn right, negative=turn left)
 double targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
 double kPA, kIA, kDA = 0.0000;//PID constants for the Angle control loop
@@ -89,8 +82,6 @@ void setup() {
   pinMode(rightDirPin, OUTPUT);
   pinMode(leftStepPin, OUTPUT);
   pinMode(rightStepPin, OUTPUT);
-  mutexRecv = xSemaphoreCreateMutex();
-  mutexSend = xSemaphoreCreateMutex();
   leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
