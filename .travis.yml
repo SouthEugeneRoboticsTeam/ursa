@@ -8,7 +8,7 @@ cache:
 before_install:
   - source <(curl -SLs https://raw.githubusercontent.com/adafruit/travis-ci-arduino/master/install.sh)
 install:
-  - arduino --install-library "Adafruit SleepyDog Library","Adafruit FONA Library"
+  - arduino --install-library "PIDLibrary"
   - pip install -U cpplint
 script:
   - make lint
