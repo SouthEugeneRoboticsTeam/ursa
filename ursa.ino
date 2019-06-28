@@ -22,10 +22,9 @@ rmt_config_t configR;
 rmt_item32_t itemsR[1];
 byte voltage = 0; //0v=0 13v=255
 int signalStrength = -100;
-byte wifI = 0; //counter for wifi sending and recieving
 volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
 volatile byte recvdDataSize = 0; //how many bytes of the array were actually filled with a message from the DS
-volatile boolean recvdNewData = true;//set true when data gotten, set false when parsed
+volatile boolean receivedNewData = true;//set true when data gotten, set false when parsed
 volatile byte tosendData[50] = {0}; //array to hold data to send to DS.
 volatile byte tosendDataSize = 0; //how many bytes of the array are actually being used and need to be sent
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
@@ -125,11 +124,9 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   if (tipped) {
     robotEnabled = false;//if the robot falls over, instead of running at full speed trying to right itself as it skids along the ground, it just disables
   }
-  if (recvdNewData) {
+  if (receivedNewData) {
     if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
-      wifI = 0;
-      parseDataRecvd();
-      wifI = 0;
+      parseDataReceived();
       createDataToSend();
       xSemaphoreGive(mutexRecv);
     }
@@ -170,36 +167,38 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   wasRobotEnabled = robotEnabled;
 }
 void createDataToSend() {//put send functions here
-  sendBl(robotEnabled);
-  sendBl(tipped);
-  sendBy(ID);
-  sendBy(MODEL_NO);
-  sendFl(pitch);
-  sendBy(voltage);
-  sendBy(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255)); //wifi RSSI higher=better TODO: adjust range
-  sendIn(leftMotorSpeed);
-  sendIn(rightMotorSpeed);
-  sendBy(numSendAux);//how many bytes of extra data
+  byte counter = 0;
+  sendBl(robotEnabled, counter);
+  sendBl(tipped, counter);
+  sendBy(ID, counter);
+  sendBy(MODEL_NO, counter);
+  sendFl(pitch, counter);
+  sendBy(voltage, counter);
+  sendBy(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
+  sendIn(leftMotorSpeed, counter);
+  sendIn(rightMotorSpeed, counter);
+  sendBy(numSendAux, counter);//how many bytes of extra data
   for (int i = 0; i < numSendAux; i++) {
-    sendBy(auxSendArray[numSendAux]); //extra data
+    sendBy(auxSendArray[numSendAux], counter); //extra data
   }
 }
-void parseDataRecvd() {//put parse functions here
-  enable = parseBl();
-  speedVal = map(parseBy(), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(parseBy(), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
-  numAuxRecv = parseBy(); //how many bytes of control data for extra things
+void parseDataReceived() {//put parse functions here
+  byte counter = 0;
+  enable = parseBl(counter);
+  speedVal = map(parseBy(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
+  turnSpeedVal = map(parseBy(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
+  numAuxRecv = parseBy(counter); //how many bytes of control data for extra things
   for (int i = 0; i < numAuxRecv; i++) {
-    auxRecvArray[i] = parseBy();
+    auxRecvArray[i] = parseBy(counter);
   }
-  settings = parseBl(); //will new PID settings be sent next
+  settings = parseBl(counter); //will new PID settings be sent next
   if (settings) {
-    kPA = parseFl();
-    kIA = parseFl();
-    kDA = parseFl();
-    kPS = parseFl();
-    kIS = parseFl();
-    kDS = parseFl();
+    kPA = parseFl(counter);
+    kIA = parseFl(counter);
+    kDA = parseFl(counter);
+    kPS = parseFl(counter);
+    kIS = parseFl(counter);
+    kDS = parseFl(counter);
   }
 }
 void setupStepperRMTs() {
@@ -258,7 +257,7 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
         char c = client.read();
         recvdData[recvdDataSize] = c;
         recvdDataSize++;
-        recvdNewData = true;
+        receivedNewData = true;
         Serial.write(c);
       }
       for (int i = 0; i < tosendDataSize; i++) {//send response, maybe change to go less frequently
@@ -333,73 +332,73 @@ void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift.
   oRY0 /= 50;
   oRZ0 /= 50;
 }
-boolean parseBl() {//return boolean at wifI position in recvdData
-  byte msg = recvdData[wifI];
-  wifI++;//increment the counter for the next value
+boolean parseBl(byte &pos) {//return boolean at pos position in recvdData
+  byte msg = recvdData[pos];
+  pos++;//increment the counter for the next value
   return (msg == 1);
 }
-byte parseBy() {//return byte at wifI position in recvdData
-  byte msg = recvdData[wifI];
-  wifI++;//increment the counter for the next value
+byte parseBy(byte &pos) {//return byte at pos position in recvdData
+  byte msg = recvdData[pos];
+  pos++;//increment the counter for the next value
   return msg;
 }
-int parseIn() { //return int from two bytes starting at wifI position in recvdData
+int parseIn(byte &pos) { //return int from two bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[2];
     int v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the int
-  d.b[0] = recvdData[wifI]; //read the first byte
-  wifI++;//increment i to the location of the second byte
-  d.b[1] = recvdData[wifI]; //read the second byte
-  wifI++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
+  d.b[0] = recvdData[pos]; //read the first byte
+  pos++;//increment i to the location of the second byte
+  d.b[1] = recvdData[pos]; //read the second byte
+  pos++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
   return d.v;//return the int form of union d
 }
-float parseFl() {//return float from 4 bytes starting at wifI position in recvdData
+float parseFl(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's 4 bytes in an array, and one's a 4 byte float) Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the float
-  d.b[0] = recvdData[wifI];
-  wifI++;
-  d.b[1] = recvdData[wifI];
-  wifI++;
-  d.b[2] = recvdData[wifI];
-  wifI++;
-  d.b[3] = recvdData[wifI];
-  wifI++;
+  d.b[0] = recvdData[pos];
+  pos++;
+  d.b[1] = recvdData[pos];
+  pos++;
+  d.b[2] = recvdData[pos];
+  pos++;
+  d.b[3] = recvdData[pos];
+  pos++;
   return d.v;
 }
-void sendBl(boolean msg) {//add a boolean to the tosendData array
-  tosendData[wifI] = msg;
-  wifI++;
+void sendBl(boolean msg, byte &pos) {//add a boolean to the tosendData array
+  tosendData[pos] = msg;
+  pos++;
 }
-void sendBy(byte msg) {//add a byte to the tosendData array
-  tosendData[wifI] = msg;
-  wifI++;
+void sendBy(byte msg, byte &pos) {//add a byte to the tosendData array
+  tosendData[pos] = msg;
+  pos++;
 }
-void sendIn(int msg) {//add an int to the tosendData array (two bytes)
+void sendIn(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
   union {
     byte b[2];
     int v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;//put the value into the union as an int
-  tosendData[wifI] = d.b[0];
-  wifI++;
-  tosendData[wifI] = d.b[1];
-  wifI++;
+  tosendData[pos] = d.b[0];
+  pos++;
+  tosendData[pos] = d.b[1];
+  pos++;
 }
-void sendFl(float msg) {//add a float to the tosendData array (four bytes)
+void sendFl(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
   union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
   } d;//d is the union, d.b acceses the byte array, d.v acceses the float
   d.v = msg;
-  tosendData[wifI] = d.b[0];
-  wifI++;
-  tosendData[wifI] = d.b[1];
-  wifI++;
-  tosendData[wifI] = d.b[2];
-  wifI++;
-  tosendData[wifI] = d.b[3];
-  wifI++;
+  tosendData[pos] = d.b[0];
+  pos++;
+  tosendData[pos] = d.b[1];
+  pos++;
+  tosendData[pos] = d.b[2];
+  pos++;
+  tosendData[pos] = d.b[3];
+  pos++;
 }
