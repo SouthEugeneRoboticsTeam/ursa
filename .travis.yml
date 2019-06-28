@@ -13,3 +13,7 @@ install:
 script:
   - make lint
   - build_main_platforms
+notifications:
+  email:
+    on_success: change
+    on_failure: change
