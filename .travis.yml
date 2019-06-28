@@ -12,7 +12,7 @@ install:
   - pip install -U cpplint
 script:
   - make lint
-  - build_main_platforms
+  - build_platform esp32
 notifications:
   email:
     on_success: change
