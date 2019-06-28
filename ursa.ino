@@ -5,7 +5,7 @@
 #include <WiFiClient.h>
 #include <WiFiAP.h>
 
-#define ID 0            // unique robot ID, sent to DS
+#define ROBOT_ID 0      // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
 #define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
 #define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
@@ -19,7 +19,7 @@
 #define RIGHT_DIR_PIN GPIO_NUM_26
 
 // Define the SSID and password for the robot's access point
-const char *robotSSID = "SERT_URSA_0";
+char robotSSID[12];//string and ROBOT_ID put in here in setup
 const char *robotPass = "sert2521";
 
 hw_timer_t *leftStepTimer = NULL;
@@ -89,6 +89,7 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
   rmt_write_items(configR.channel, itemsR, 1, 0);//start pulse
 }
 void setup() {
+  sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);//create ssid from robot string and robot id
   Serial.begin(2000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
@@ -173,7 +174,7 @@ void createDataToSend() {//put send functions here
   byte counter = 0;
   sendBl(robotEnabled, counter);
   sendBl(tipped, counter);
-  sendBy(ID, counter);
+  sendBy(ROBOT_ID, counter);
   sendBy(MODEL_NO, counter);
   sendFl(pitch, counter);
   sendBy(voltage, counter);
