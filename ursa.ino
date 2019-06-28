@@ -5,10 +5,10 @@
 #include <WiFiClient.h>
 #include <WiFiAP.h>
 
-#define MAX_TIP 33.3    // max angle the robot will attempt to recover from -- if passed, robot will disable
 #define ID 0            // unique robot ID, sent to DS
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
-#define MAX_SPEED 4000  // maximum speed (in steps/sec) that the motors can run at
+#define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
+#define MAX_TIP 33.3    // max angle the robot will attempt to recover from -- if passed, robot will disable
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
