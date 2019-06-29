@@ -42,7 +42,7 @@ byte auxSendArray[12] = {0}; //size of numAuxSend
 
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
+SemaphoreHandle_t mutexSend;//used to check whether sendBufferAddIntg tasks can safely change shared variables
 
 boolean robotEnabled = false;//enable outputs?
 boolean wasRobotEnabled = false; //to know if robotEnabled has changed
@@ -181,36 +181,36 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
 }
 void createDataToSend() {//put send functions here
   byte counter = 0;
-  sendBl(robotEnabled, counter);
-  sendBl(tipped, counter);
-  sendBy(ROBOT_ID, counter);
-  sendBy(MODEL_NO, counter);
-  sendFl(pitch, counter);
-  sendBy(voltage, counter);
-  sendBy(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
-  sendIn(leftMotorSpeed, counter);
-  sendIn(rightMotorSpeed, counter);
-  sendBy(numSendAux, counter);//how many bytes of extra data
+  sendBufferAddBoolean(robotEnabled, counter);
+  sendBufferAddBoolean(tipped, counter);
+  sendBufferAddBytete(ROBOT_ID, counter);
+  sendBufferAddBytete(MODEL_NO, counter);
+  sendBufferAddFloat(pitch, counter);
+  sendBufferAddBytete(voltage, counter);
+  sendBufferAddBytete(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
+  sendBufferAddInt(leftMotorSpeed, counter);
+  sendBufferAddInt(rightMotorSpeed, counter);
+  sendBufferAddBytete(numSendAux, counter);//how many bytes of extra data
   for (int i = 0; i < numSendAux; i++) {
-    sendBy(auxSendArray[numSendAux], counter); //extra data
+    sendBufferAddBytete(auxSendArray[numSendAux], counter); //extra data
   }
 }
 void parseDataReceived() {//put parse functions here
   byte counter = 0;
-  enable = parseBl(counter);
-  speedVal = map(parseBy(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(parseBy(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
-  numAuxRecv = parseBy(counter); //how many bytes of control data for extra things
+  enable = receiveBufferReadBoolean(counter);
+  speedVal = map(receiveBufferReadByte(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
+  turnSpeedVal = map(receiveBufferReadByte(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
+  numAuxRecv = receiveBufferReadByte(counter); //how many bytes of control data for extra things
   for (int i = 0; i < numAuxRecv; i++) {
-    auxRecvArray[i] = parseBy(counter);
+    auxRecvArray[i] = receiveBufferReadByte(counter);
   }
-  if (parseBl(counter)) {
-    kP_angle = parseFl(counter);
-    kI_angle = parseFl(counter);
-    kD_angle = parseFl(counter);
-    kP_speed = parseFl(counter);
-    kI_speed = parseFl(counter);
-    kD_speed = parseFl(counter);
+  if (receiveBufferReadBoolean(counter)) {
+    kP_angle = receiveBufferFloat(counter);
+    kI_angle = receiveBufferFloat(counter);
+    kD_angle = receiveBufferFloat(counter);
+    kP_speed = receiveBufferFloat(counter);
+    kI_speed = receiveBufferFloat(counter);
+    kD_speed = receiveBufferFloat(counter);
   }
 }
 void setupStepperRMTs() {
@@ -280,7 +280,7 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
     Serial.println(" wifi end");
   }
 }
-void setupMPU6050() {//start I2C communication and send commands to set up the MPU6050.  A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed, and then sending a new register value
+void setupMPU6050() {//start I2C communication and send commands to set up the MPU6050.  A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed, and then sendBufferAddIntg a new register value
   Wire.begin();//////////////////////setup mpu6050. reference for the mpu6050's registers https://www.invensense.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
   Wire.setClock(400000L);//send data at a faster clock speed
   Wire.beginTransmission(0x68);
@@ -346,17 +346,17 @@ void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift.
   rotationOffsetY /= 50;
   rotationOffsetZ /= 50;
 }
-boolean parseBl(byte &pos) {//return boolean at pos position in recvdData
+boolean receiveBufferReadBoolean(byte &pos) {//return boolean at pos position in recvdData
   byte msg = recvdData[pos];
   pos++;//increment the counter for the next value
   return (msg == 1);
 }
-byte parseBy(byte &pos) {//return byte at pos position in recvdData
+byte receiveBufferReadByte(byte &pos) {//return byte at pos position in recvdData
   byte msg = recvdData[pos];
   pos++;//increment the counter for the next value
   return msg;
 }
-int parseIn(byte &pos) { //return int from two bytes starting at pos position in recvdData
+int receiveBufferReadInt(byte &pos) { //return int from two bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[2];
     int v;
@@ -367,7 +367,7 @@ int parseIn(byte &pos) { //return int from two bytes starting at pos position in
   pos++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
   return d.v;//return the int form of union d
 }
-float parseFl(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
+float receiveBufferFloat(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's 4 bytes in an array, and one's a 4 byte float) Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
@@ -382,15 +382,15 @@ float parseFl(byte &pos) {//return float from 4 bytes starting at pos position i
   pos++;
   return d.v;
 }
-void sendBl(boolean msg, byte &pos) {//add a boolean to the tosendData array
+void sendBufferAddBoolean(boolean msg, byte &pos) {//add a boolean to the tosendData array
   dataToSend[pos] = msg;
   pos++;
 }
-void sendBy(byte msg, byte &pos) {//add a byte to the tosendData array
+void sendBufferAddByte(byte msg, byte &pos) {//add a byte to the tosendData array
   dataToSend[pos] = msg;
   pos++;
 }
-void sendIn(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
+void sendBufferAddInt(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
   union {
     byte b[2];
     int v;
@@ -401,7 +401,7 @@ void sendIn(int msg, byte &pos) {//add an int to the tosendData array (two bytes
   dataToSend[pos] = d.b[1];
   pos++;
 }
-void sendFl(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
+void sendBufferAddFloat(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
   union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
