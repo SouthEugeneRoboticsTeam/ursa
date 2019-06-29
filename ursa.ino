@@ -183,16 +183,16 @@ void createDataToSend() {//put send functions here
   byte counter = 0;
   sendBufferAddBoolean(robotEnabled, counter);
   sendBufferAddBoolean(tipped, counter);
-  sendBufferAddBytete(ROBOT_ID, counter);
-  sendBufferAddBytete(MODEL_NO, counter);
+  sendBufferAddByte(ROBOT_ID, counter);
+  sendBufferAddByte(MODEL_NO, counter);
   sendBufferAddFloat(pitch, counter);
-  sendBufferAddBytete(voltage, counter);
-  sendBufferAddBytete(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
+  sendBufferAddByte(voltage, counter);
+  sendBufferAddByte(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
   sendBufferAddInt(leftMotorSpeed, counter);
   sendBufferAddInt(rightMotorSpeed, counter);
-  sendBufferAddBytete(numSendAux, counter);//how many bytes of extra data
+  sendBufferAddByte(numSendAux, counter);//how many bytes of extra data
   for (int i = 0; i < numSendAux; i++) {
-    sendBufferAddBytete(auxSendArray[numSendAux], counter); //extra data
+    sendBufferAddByte(auxSendArray[numSendAux], counter); //extra data
   }
 }
 void parseDataReceived() {//put parse functions here
@@ -280,7 +280,7 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
     Serial.println(" wifi end");
   }
 }
-//start I2C communication and send commands to set up the MPU6050.  
+//start I2C communication and send commands to set up the MPU6050.
 //A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
 //and then sending a new register value
 void setupMPU6050() {
