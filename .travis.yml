@@ -1,6 +1,6 @@
 language: python
 python:
-  - "2.7"
+  - "3.7"
 cache:
   directories:
     - ~/arduino_ide
@@ -16,7 +16,7 @@ before_install:
   - sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 install:
   - arduino --install-library "PID"
-  - pip install -U cpplint
+  - pip install -U cpplint pyserial
 script:
   - build_platform esp32
   - make lint
