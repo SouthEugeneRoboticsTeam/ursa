@@ -216,22 +216,22 @@ void createDataToSend() {
 
 void parseDataReceived() {//put parse functions here
   byte counter = 0;
-  enable = receiveBufferReadBoolean(counter);
-  speedVal = map(receiveBufferReadByte(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(receiveBufferReadByte(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
-  numAuxRecv = receiveBufferReadByte(counter); //how many bytes of control data for extra things
+  enable = readBoolFromBuffer(counter);
+  speedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
+  numAuxRecv = readByteFromBuffer(counter); //how many bytes of control data for extra things
 
   for (int i = 0; i < numAuxRecv; i++) {
-    auxRecvArray[i] = receiveBufferReadByte(counter);
+    auxRecvArray[i] = readByteFromBuffer(counter);
   }
 
-  if (receiveBufferReadBoolean(counter)) {
-    kP_angle = receiveBufferFloat(counter);
-    kI_angle = receiveBufferFloat(counter);
-    kD_angle = receiveBufferFloat(counter);
-    kP_speed = receiveBufferFloat(counter);
-    kI_speed = receiveBufferFloat(counter);
-    kD_speed = receiveBufferFloat(counter);
+  if (readBoolFromBuffer(counter)) {
+    kP_angle = readFloatFromBuffer(counter);
+    kI_angle = readFloatFromBuffer(counter);
+    kD_angle = readFloatFromBuffer(counter);
+    kP_speed = readFloatFromBuffer(counter);
+    kI_speed = readFloatFromBuffer(counter);
+    kD_speed = readFloatFromBuffer(counter);
   }
 }
 
@@ -381,19 +381,19 @@ void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift.
   rotationOffsetZ /= 50;
 }
 
-boolean receiveBufferReadBoolean(byte &pos) {//return boolean at pos position in recvdData
+boolean readBoolFromBuffer(byte &pos) {//return boolean at pos position in recvdData
   byte msg = recvdData[pos];
   pos++;//increment the counter for the next value
   return (msg == 1);
 }
 
-byte receiveBufferReadByte(byte &pos) {//return byte at pos position in recvdData
+byte readByteFromBuffer(byte &pos) {//return byte at pos position in recvdData
   byte msg = recvdData[pos];
   pos++;//increment the counter for the next value
   return msg;
 }
 
-int receiveBufferReadInt(byte &pos) { //return int from two bytes starting at pos position in recvdData
+int readIntFromBuffer(byte &pos) { //return int from two bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[2];
     int v;
@@ -405,7 +405,7 @@ int receiveBufferReadInt(byte &pos) { //return int from two bytes starting at po
   return d.v;//return the int form of union d
 }
 
-float receiveBufferFloat(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
+float readFloatFromBuffer(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's 4 bytes in an array, and one's a 4 byte float) Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
