@@ -28,27 +28,35 @@ rmt_config_t configL;   // settings for RMT pulse for stepper motor
 rmt_item32_t itemsL[1]; // holds definition of pulse for stepper motor
 rmt_config_t configR;
 rmt_item32_t itemsR[1];
+
+WiFiServer server(80);
 byte voltage = 0; //0v=0 13v=255
 int signalStrength = -100;
 volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
 volatile boolean receivedNewData = false;//set true when data gotten, set false when parsed
 volatile byte dataToSend[50] = {0}; //array to hold data to send to DS.
-//since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
-SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
 byte numAuxRecv = 0; //how many bytes of control data for extra things
 byte auxRecvArray[12] = {0}; //size of numAuxRecv
 byte numSendAux = 0; //how many bytes of sensor data to send
 byte auxSendArray[12] = {0}; //size of numAuxSend
+
+//since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
+SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
+SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
+
 boolean robotEnabled = false;//enable outputs?
 boolean wasRobotEnabled = false; //to know if robotEnabled has changed
 boolean enable = false;//is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
-int16_t oAX, oAY, oAZ, oRX, oRY, oRZ, oRX0, oRY0, oRZ0 = 0;//for MPU6050 A=acceleration(raw) R=rotation(raw) R_0=values used to zero the gyro on startup
+
+int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ, \
+        rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;//"offset" values used to zero the MPU6050 gyro on startup
 unsigned long lastCalcedMPU6050 = 0;//micros() value of last orientation read. used to integrate gyro data to get rotation
-double oDPSX, oDPSY, oDPSZ = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
-double pitch = 0.000;//output (in degrees) from the MPU6050 reading code. matters for self balencing.
+double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
+double pitch = 0.000;//output (in degrees) from the MPU6050 reading code. matters for self balancing.
+
 float pitchOffset = 0.000; //subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
+double targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
 volatile int leftMotorSpeed = 0;//stepper ticks per second that the left motor is currently doing "volatile" because used in an interrupt
 volatile int rightMotorSpeed = 0;
 volatile boolean rightForwardBl = false;//was the motor moving forwards last time the interrupt was called
@@ -56,12 +64,12 @@ volatile boolean leftForwardBl = false;
 double motorSpeedVal = 0;//how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
 double speedVal = 0;//how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;//(positive=turn right, negative=turn left)
-double targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
-double kPA, kIA, kDA = 0.0000;//PID constants for the Angle control loop
-double kPS, kIS, kDS = 0.0000;//PID constants for the Speed control loop
-PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kPA, kIA, kDA, DIRECT);//setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kPS, kIA, kDA, DIRECT);//setup the Speed PID loop
-WiFiServer server(80);
+
+double kP_angle, kI_angle, kD_angle = 0.0000;//PID gains for the Angle control loop
+double kP_speed, kI_speed, kD_speed = 0.0000;//PID gains for the Speed control loop
+PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);//setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
+PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, DIRECT);//setup the Speed PID loop
+
 void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
   if ((leftMotorSpeed >= 0) != leftForwardBl) {//if direction has changed
     if (leftMotorSpeed >= 0) {
@@ -142,8 +150,8 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
       PIDA.SetMode(AUTOMATIC);//turn on the PID
       PIDS.SetMode(AUTOMATIC);//turn on the PID
     }
-    PIDA.SetTunings(kPA, kIA, kDA);
-    PIDS.SetTunings(kPS, kIS, kDS);
+    PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
+    PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDS.Compute(); //compute the PID, it changes the variables you set it up with earlier.
     PIDA.Compute();
     leftMotorSpeed = constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED); //combine motor speed and turn to find the speed the left motor should go
@@ -197,12 +205,12 @@ void parseDataReceived() {//put parse functions here
     auxRecvArray[i] = parseBy(counter);
   }
   if (parseBl(counter)) {
-    kPA = parseFl(counter);
-    kIA = parseFl(counter);
-    kDA = parseFl(counter);
-    kPS = parseFl(counter);
-    kIS = parseFl(counter);
-    kDS = parseFl(counter);
+    kP_angle = parseFl(counter);
+    kI_angle = parseFl(counter);
+    kD_angle = parseFl(counter);
+    kP_speed = parseFl(counter);
+    kI_speed = parseFl(counter);
+    kD_speed = parseFl(counter);
   }
 }
 void setupStepperRMTs() {
@@ -297,44 +305,46 @@ void readMPU6050() {
   Wire.write(0x3B);//location of first byte of data
   Wire.endTransmission(false);
   Wire.requestFrom(0x68, 14, true);//ask for accel and gyro data bytes
-  oAX = Wire.read() << 8 | Wire.read();//read two bytes and put them together into a sixteen bit integer value
-  oAY = Wire.read() << 8 | Wire.read();
-  oAZ = Wire.read() << 8 | Wire.read();
+  accelerationX = Wire.read() << 8 | Wire.read();//read two bytes and put them together into a sixteen bit integer value
+  accelerationY = Wire.read() << 8 | Wire.read();
+  accelerationZ = Wire.read() << 8 | Wire.read();
   Wire.read(); Wire.read();//throw away temperature, it's annoying they put it in the middle here
-  oRX = Wire.read() << 8 | Wire.read();
-  oRY = Wire.read() << 8 | Wire.read();
-  oRZ = Wire.read() << 8 | Wire.read();
-  oDPSX = (oRX - oRX0) * 1000000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
-  oDPSY = (oRY - oRY0) * 1000000.00 / 32766;
-  oDPSZ = (oRZ - oRZ0) * 1000000.00 / 32766;
+  rotationX = Wire.read() << 8 | Wire.read();
+  rotationY = Wire.read() << 8 | Wire.read();
+  rotationZ = Wire.read() << 8 | Wire.read();
+  rotationDPS_X = (rotationX - rotationOffsetX) * 1000000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
+  rotationDPS_Y = (rotationY - rotationOffsetY) * 1000000.00 / 32766;
+  rotationDPS_Z = (rotationZ - rotationOffsetZ) * 1000000.00 / 32766;
   if (micros() > lastCalcedMPU6050) {//try to handle micros' long overflow in a harmless way
     lastCalcedMPU6050 = micros() - 10;
   }
-  pitch = .99 * ((pitch - pitchOffset) + oDPSX * (micros() - lastCalcedMPU6050) / 1000000.000) + .01 * (degrees(atan2(oAY, oAZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
+  pitch = .99 * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + .01 * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
   lastCalcedMPU6050 = micros();//record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
 void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
-  oRX0 = 0; oRY0 = 0; oRZ0 = 0;
+  rotationOffsetX = 0;
+  rotationOffsetY = 0;
+  rotationOffsetZ = 0;
   for (int i = 0; i < 50; i++) {//run the following code 50 times so we can get many measurements to average into an offset value
     Wire.beginTransmission(0x68);
     Wire.write(0x3B);
     Wire.endTransmission(false);
     Wire.requestFrom(0x68, 14, true);
-    oAX = Wire.read() << 8 | Wire.read();//same reading code as earlier
-    oAY = Wire.read() << 8 | Wire.read();
-    oAZ = Wire.read() << 8 | Wire.read();
+    accelerationX = Wire.read() << 8 | Wire.read();//same reading code as earlier
+    accelerationY = Wire.read() << 8 | Wire.read();
+    accelerationZ = Wire.read() << 8 | Wire.read();
     Wire.read(); Wire.read();//throw away temperature
-    oRX = Wire.read() << 8 | Wire.read();
-    oRY = Wire.read() << 8 | Wire.read();
-    oRZ = Wire.read() << 8 | Wire.read();
-    oRX0 += oRX;//add all the reads together
-    oRY0 += oRY;
-    oRZ0 += oRZ;
+    rotationX = Wire.read() << 8 | Wire.read();
+    rotationY = Wire.read() << 8 | Wire.read();
+    rotationZ = Wire.read() << 8 | Wire.read();
+    rotationOffsetX += rotationX;//add all the reads together
+    rotationOffsetY += rotationY;
+    rotationOffsetZ += rotationZ;
     delay(10 + i / 5);//add some time between reads, changing the delay each time a bit to be less likely to be thrown by a periodic oscillation
   }
-  oRX0 /= 50;//devide by the number of reads that were taken to get an average value
-  oRY0 /= 50;
-  oRZ0 /= 50;
+  rotationOffsetX /= 50;//devide by the number of reads that were taken to get an average value
+  rotationOffsetY /= 50;
+  rotationOffsetZ /= 50;
 }
 boolean parseBl(byte &pos) {//return boolean at pos position in recvdData
   byte msg = recvdData[pos];
