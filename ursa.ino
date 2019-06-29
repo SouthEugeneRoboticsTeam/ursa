@@ -83,6 +83,7 @@ void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
   }
   rmt_write_items(configL.channel, itemsL, 1, 0);//start pulse
 }
+
 void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
   if ((rightMotorSpeed >= 0) != rightForwardBl) {//if direction has changed
     if (rightMotorSpeed >= 0) {
@@ -90,12 +91,15 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
     } else {
       digitalWrite(RIGHT_DIR_PIN, LOW);
     }
+
     rightForwardBl = (rightMotorSpeed >= 0);//save direction for next time
+
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
     NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
   }
   rmt_write_items(configR.channel, itemsR, 1, 0);//start pulse
 }
+
 void setup() {
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
 
@@ -127,16 +131,16 @@ void setup() {
   server.begin();
   Serial.println("Server started");
 }
+
 void loop() {//on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
   if (abs(pitch) > MAX_TIP) {
     tipped = true;
+    robotEnabled = false;
   } else {
     tipped = false;
   }
-  if (tipped) {
-    robotEnabled = false;//if the robot falls over, instead of running at full speed trying to right itself as it skids along the ground, it just disables
-  }
+
   if (receivedNewData) {
     if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
       parseDataReceived();
@@ -144,12 +148,14 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
       xSemaphoreGive(mutexRecv);
     }
   }
+
   if (robotEnabled) {//run the following code if the robot is enabled
     if (!wasRobotEnabled) {//the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       //TODO: turn on stepper motors
       PIDA.SetMode(AUTOMATIC);//turn on the PID
       PIDS.SetMode(AUTOMATIC);//turn on the PID
     }
+
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDS.Compute(); //compute the PID, it changes the variables you set it up with earlier.
@@ -161,6 +167,7 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
     } else {
       timerAlarmWrite(leftStepTimer, 10000000000000000, true); //don't step
     }
+
     if (abs(rightMotorSpeed) >= 1) {
       timerAlarmWrite(rightStepTimer, 1000000 / rightMotorSpeed, true); // 1Mhz / # =  rate
     } else {
@@ -177,8 +184,10 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
     delay(2000);
     DBserialPrintCurrentCore("(disabled) loop");//print debugging test of what core the loop is running on
   }
+
   wasRobotEnabled = robotEnabled;
 }
+
 void createDataToSend() {//put send functions here
   byte counter = 0;
   sendBufferAddBoolean(robotEnabled, counter);
@@ -195,15 +204,18 @@ void createDataToSend() {//put send functions here
     sendBufferAddByte(auxSendArray[numSendAux], counter); //extra data
   }
 }
+
 void parseDataReceived() {//put parse functions here
   byte counter = 0;
   enable = receiveBufferReadBoolean(counter);
   speedVal = map(receiveBufferReadByte(counter), 0, 255, -MAX_SPEED, MAX_SPEED); //0=back, 127/8=stop, 255=forwards
   turnSpeedVal = map(receiveBufferReadByte(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); //0=left, 255=right
   numAuxRecv = receiveBufferReadByte(counter); //how many bytes of control data for extra things
+
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = receiveBufferReadByte(counter);
   }
+
   if (receiveBufferReadBoolean(counter)) {
     kP_angle = receiveBufferFloat(counter);
     kI_angle = receiveBufferFloat(counter);
@@ -213,6 +225,7 @@ void parseDataReceived() {//put parse functions here
     kD_speed = receiveBufferFloat(counter);
   }
 }
+
 void setupStepperRMTs() {
   configL.rmt_mode = RMT_MODE_TX;
   configL.channel = RMT_CHANNEL_0;
@@ -248,11 +261,13 @@ void setupStepperRMTs() {
   itemsR[0].duration1 = 0;
   itemsR[0].level1 = 0;
 }
+
 void DBserialPrintCurrentCore(String msg) { //function for DeBugging, packages and prints the core the function is called from
   Serial.print(msg);
   Serial.print(" running on core #");
   Serial.println(xPortGetCoreID());//prints which core this code is running on
 }
+
 void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens, including recieving a message
   DBserialPrintCurrentCore("wifi event");
   Serial.print("wifi event: ");
@@ -280,6 +295,7 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
     Serial.println(" wifi end");
   }
 }
+
 //start I2C communication and send commands to set up the MPU6050.
 //A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
 //and then sending a new register value
@@ -303,6 +319,7 @@ void setupMPU6050() {
   Wire.write(0x00);//buffering
   Wire.endTransmission(true);///////end setup mpu6050
 }
+
 void readMPU6050() {
   Wire.beginTransmission(0x68);
   Wire.write(0x3B);//location of first byte of data
@@ -324,6 +341,7 @@ void readMPU6050() {
   pitch = .99 * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + .01 * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
   lastCalcedMPU6050 = micros();//record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
+
 void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
   rotationOffsetX = 0;
   rotationOffsetY = 0;
@@ -349,16 +367,19 @@ void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift.
   rotationOffsetY /= 50;
   rotationOffsetZ /= 50;
 }
+
 boolean receiveBufferReadBoolean(byte &pos) {//return boolean at pos position in recvdData
   byte msg = recvdData[pos];
   pos++;//increment the counter for the next value
   return (msg == 1);
 }
+
 byte receiveBufferReadByte(byte &pos) {//return byte at pos position in recvdData
   byte msg = recvdData[pos];
   pos++;//increment the counter for the next value
   return msg;
 }
+
 int receiveBufferReadInt(byte &pos) { //return int from two bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[2];
@@ -370,6 +391,7 @@ int receiveBufferReadInt(byte &pos) { //return int from two bytes starting at po
   pos++;//shift i once more so it's ready for the next function (at the position of the start of the next value)
   return d.v;//return the int form of union d
 }
+
 float receiveBufferFloat(byte &pos) {//return float from 4 bytes starting at pos position in recvdData
   union {//this lets us translate between two variable types (equal size, but one's 4 bytes in an array, and one's a 4 byte float) Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
@@ -385,14 +407,17 @@ float receiveBufferFloat(byte &pos) {//return float from 4 bytes starting at pos
   pos++;
   return d.v;
 }
+
 void sendBufferAddBoolean(boolean msg, byte &pos) {//add a boolean to the tosendData array
   dataToSend[pos] = msg;
   pos++;
 }
+
 void sendBufferAddByte(byte msg, byte &pos) {//add a byte to the tosendData array
   dataToSend[pos] = msg;
   pos++;
 }
+
 void sendBufferAddInt(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
   union {
     byte b[2];
@@ -404,6 +429,7 @@ void sendBufferAddInt(int msg, byte &pos) {//add an int to the tosendData array 
   dataToSend[pos] = d.b[1];
   pos++;
 }
+
 void sendBufferAddFloat(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
   union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
