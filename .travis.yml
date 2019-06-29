@@ -6,7 +6,7 @@ cache:
     - ~/.arduino15/packages/
 before_install:
   - export INSTALL_PLATFORMS="esp32"
-  - source <(curl -SLs https://raw.githubusercontent.com/andrewda/travis-ci-arduino/custom-install/install.sh)
+  - source <(curl -SLs https://raw.githubusercontent.com/adafruit/travis-ci-arduino/master/install.sh)
   # Arduino IDE adds a lot of noise caused by network traffic, trying to firewall it off
   - sudo iptables -P INPUT DROP
   - sudo iptables -P FORWARD DROP
