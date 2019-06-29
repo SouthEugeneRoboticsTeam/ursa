@@ -3,7 +3,6 @@ python:
   - "3.7"
 cache:
   directories:
-    - ~/arduino_ide
     - ~/.arduino15/packages/
 before_install:
   - export INSTALL_PLATFORMS="esp32"
