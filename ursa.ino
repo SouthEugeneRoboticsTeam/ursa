@@ -24,10 +24,11 @@ const char *robotPass = "sert2521";
 
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
-rmt_config_t configL;   // settings for RMT pulse for stepper motor
-rmt_item32_t itemsL[1]; // holds definition of pulse for stepper motor
-rmt_config_t configR;
-rmt_item32_t itemsR[1];
+
+rmt_config_t leftConfig;   // settings for RMT pulse for stepper motor
+rmt_item32_t leftItems[1]; // holds definition of pulse for stepper motor
+rmt_config_t rightConfig;
+rmt_item32_t rightItems[1];
 
 WiFiServer server(80);
 byte voltage = 0; //0v=0 13v=255
@@ -41,12 +42,12 @@ byte numSendAux = 0; //how many bytes of sensor data to send
 byte auxSendArray[12] = {0}; //size of numAuxSend
 
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
-SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
+SemaphoreHandle_t mutexReceive;  // used to check whether receiving tasks can safely change shared variables
+SemaphoreHandle_t mutexSend;     // used to check whether sending tasks can safely change shared variables
 
-boolean robotEnabled = false;//enable outputs?
-boolean wasRobotEnabled = false; //to know if robotEnabled has changed
-boolean enable = false;//is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
+boolean robotEnabled = false;     // enable outputs?
+boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
+boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
 
 int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ, \
@@ -77,11 +78,14 @@ void IRAM_ATTR onLeftStepTimer() { //Interrupt function called by timer
     } else {
       digitalWrite(LEFT_DIR_PIN, LOW);
     }
+
     leftForwardBl = (leftMotorSpeed >= 0);//save direction for next time
+
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
     NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
   }
-  rmt_write_items(configL.channel, itemsL, 1, 0);//start pulse
+
+  rmt_write_items(leftConfig.channel, leftItems, 1, 0);//start pulse
 }
 
 void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
@@ -97,7 +101,8 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
     //delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
     NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
   }
-  rmt_write_items(configR.channel, itemsR, 1, 0);//start pulse
+
+  rmt_write_items(rightConfig.channel, rightItems, 1, 0);//start pulse
 }
 
 void setup() {
@@ -142,10 +147,10 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   }
 
   if (receivedNewData) {
-    if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
+    if (xSemaphoreTake(mutexReceive, 0) == pdTRUE) {
       parseDataReceived();
       createDataToSend();
-      xSemaphoreGive(mutexRecv);
+      xSemaphoreGive(mutexReceive);
     }
   }
 
@@ -160,8 +165,10 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDS.Compute(); //compute the PID, it changes the variables you set it up with earlier.
     PIDA.Compute();
+
     leftMotorSpeed = constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED); //combine motor speed and turn to find the speed the left motor should go
     rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED); //combine motor speed and turn to find the speed the right motor should go
+
     if (abs(leftMotorSpeed) >= 1) {
       timerAlarmWrite(leftStepTimer, 1000000 / leftMotorSpeed, true); // 1Mhz / # =  rate
     } else {
@@ -188,20 +195,22 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   wasRobotEnabled = robotEnabled;
 }
 
-void createDataToSend() {//put send functions here
+void createDataToSend() {
   byte counter = 0;
-  sendBufferAddBoolean(robotEnabled, counter);
-  sendBufferAddBoolean(tipped, counter);
-  sendBufferAddByte(ROBOT_ID, counter);
-  sendBufferAddByte(MODEL_NO, counter);
-  sendBufferAddFloat(pitch, counter);
-  sendBufferAddByte(voltage, counter);
-  sendBufferAddByte(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter); //wifi RSSI higher=better TODO: adjust range
-  sendBufferAddInt(leftMotorSpeed, counter);
-  sendBufferAddInt(rightMotorSpeed, counter);
-  sendBufferAddByte(numSendAux, counter);//how many bytes of extra data
+
+  addByteToBuffer(robotEnabled, counter);
+  addByteToBuffer(tipped, counter);
+  addByteToBuffer(ROBOT_ID, counter);
+  addByteToBuffer(MODEL_NO, counter);
+  addFloatToBuffer(pitch, counter);
+  addByteToBuffer(voltage, counter);
+  addByteToBuffer(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter);  // wifi RSSI, higher=better
+  addIntToBuffer(leftMotorSpeed, counter);
+  addIntToBuffer(rightMotorSpeed, counter);
+  addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
+
   for (int i = 0; i < numSendAux; i++) {
-    sendBufferAddByte(auxSendArray[numSendAux], counter); //extra data
+    addByteToBuffer(auxSendArray[numSendAux], counter);  // extra data
   }
 }
 
@@ -227,39 +236,39 @@ void parseDataReceived() {//put parse functions here
 }
 
 void setupStepperRMTs() {
-  configL.rmt_mode = RMT_MODE_TX;
-  configL.channel = RMT_CHANNEL_0;
-  configL.gpio_num = LEFT_STEP_PIN;
-  configL.mem_block_num = 1;
-  configL.tx_config.loop_en = 0;
-  configL.tx_config.carrier_en = 0;
-  configL.tx_config.idle_output_en = 1;
-  configL.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-  configL.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
-  configL.clk_div = 80; // 80MHx / 80 = 1MHz 0r 1uS per count
-  rmt_config(&configL);
-  rmt_driver_install(configL.channel, 0, 0);  //  rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
-  itemsL[0].duration0 = 2;
-  itemsL[0].level0 = 1;
-  itemsL[0].duration1 = 0;
-  itemsL[0].level1 = 0;
+  leftConfig.rmt_mode = RMT_MODE_TX;
+  leftConfig.channel = RMT_CHANNEL_0;
+  leftConfig.gpio_num = LEFT_STEP_PIN;
+  leftConfig.mem_block_num = 1;
+  leftConfig.tx_config.loop_en = 0;
+  leftConfig.tx_config.carrier_en = 0;
+  leftConfig.tx_config.idle_output_en = 1;
+  leftConfig.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+  leftConfig.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
+  leftConfig.clk_div = 80; // 80MHx / 80 = 1MHz 0r 1uS per count
+  rmt_config(&leftConfig);
+  rmt_driver_install(leftConfig.channel, 0, 0);  //  rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
+  leftItems[0].duration0 = 2;
+  leftItems[0].level0 = 1;
+  leftItems[0].duration1 = 0;
+  leftItems[0].level1 = 0;
 
-  configR.rmt_mode = RMT_MODE_TX;
-  configR.channel = RMT_CHANNEL_0;
-  configR.gpio_num = RIGHT_STEP_PIN;
-  configR.mem_block_num = 1;
-  configR.tx_config.loop_en = 0;
-  configR.tx_config.carrier_en = 0;
-  configR.tx_config.idle_output_en = 1;
-  configR.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-  configR.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
-  configR.clk_div = 80; // 80MHx / 80 = 1MHz 0r 1uS per count
-  rmt_config(&configR);
-  rmt_driver_install(configR.channel, 0, 1);  //  rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
-  itemsR[0].duration0 = 2;
-  itemsR[0].level0 = 1;
-  itemsR[0].duration1 = 0;
-  itemsR[0].level1 = 0;
+  rightConfig.rmt_mode = RMT_MODE_TX;
+  rightConfig.channel = RMT_CHANNEL_0;
+  rightConfig.gpio_num = RIGHT_STEP_PIN;
+  rightConfig.mem_block_num = 1;
+  rightConfig.tx_config.loop_en = 0;
+  rightConfig.tx_config.carrier_en = 0;
+  rightConfig.tx_config.idle_output_en = 1;
+  rightConfig.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
+  rightConfig.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
+  rightConfig.clk_div = 80; // 80MHx / 80 = 1MHz 0r 1uS per count
+  rmt_config(&rightConfig);
+  rmt_driver_install(rightConfig.channel, 0, 1);  //  rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
+  rightItems[0].duration0 = 2;
+  rightItems[0].level0 = 1;
+  rightItems[0].duration1 = 0;
+  rightItems[0].level1 = 0;
 }
 
 void DBserialPrintCurrentCore(String msg) { //function for DeBugging, packages and prints the core the function is called from
@@ -274,10 +283,11 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
   Serial.println(event);
   Serial.print("WiFi.RSSI=");
   Serial.println(WiFi.RSSI());//Recieved Signal Strength Indicator, less negative numbers mean a stronger recieved signal
+
   //wifi recieve code:
   WiFiClient client = server.available();
   if (client) {
-    if (xSemaphoreTake(mutexRecv, 0) == pdTRUE) {
+    if (xSemaphoreTake(mutexReceive, 0) == pdTRUE) {
       Serial.println("got wifi recieve mutex");
       byte count = 0;
       while (client.available()) {
@@ -287,11 +297,14 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
         receivedNewData = true;
         Serial.write(c);
       }
+
       for (int i = 0; i < count; i++) {//send response, maybe change to go less frequently
         client.write(dataToSend[i]);
       }
-      xSemaphoreGive(mutexRecv);
+
+      xSemaphoreGive(mutexReceive);
     }
+
     Serial.println(" wifi end");
   }
 }
@@ -408,17 +421,17 @@ float receiveBufferFloat(byte &pos) {//return float from 4 bytes starting at pos
   return d.v;
 }
 
-void sendBufferAddBoolean(boolean msg, byte &pos) {//add a boolean to the tosendData array
+void addBoolToBuffer(boolean msg, byte &pos) {//add a boolean to the tosendData array
   dataToSend[pos] = msg;
   pos++;
 }
 
-void sendBufferAddByte(byte msg, byte &pos) {//add a byte to the tosendData array
+void addByteToBuffer(byte msg, byte &pos) {//add a byte to the tosendData array
   dataToSend[pos] = msg;
   pos++;
 }
 
-void sendBufferAddInt(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
+void addIntToBuffer(int msg, byte &pos) {//add an int to the tosendData array (two bytes)
   union {
     byte b[2];
     int v;
@@ -430,7 +443,7 @@ void sendBufferAddInt(int msg, byte &pos) {//add an int to the tosendData array 
   pos++;
 }
 
-void sendBufferAddFloat(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
+void addFloatToBuffer(float msg, byte &pos) {//add a float to the tosendData array (four bytes)
   union {//this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https://www.mcgurrin.info/robots/127/
     byte b[4];
     float v;
