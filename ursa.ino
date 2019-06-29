@@ -42,7 +42,7 @@ byte auxSendArray[12] = {0}; //size of numAuxSend
 
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexRecv;//used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;//used to check whether sendBufferAddIntg tasks can safely change shared variables
+SemaphoreHandle_t mutexSend;//used to check whether sending tasks can safely change shared variables
 
 boolean robotEnabled = false;//enable outputs?
 boolean wasRobotEnabled = false; //to know if robotEnabled has changed
@@ -280,7 +280,10 @@ void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatic
     Serial.println(" wifi end");
   }
 }
-void setupMPU6050() {//start I2C communication and send commands to set up the MPU6050.  A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed, and then sendBufferAddIntg a new register value
+//start I2C communication and send commands to set up the MPU6050.  
+//A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
+//and then sending a new register value
+void setupMPU6050() {
   Wire.begin();//////////////////////setup mpu6050. reference for the mpu6050's registers https://www.invensense.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
   Wire.setClock(400000L);//send data at a faster clock speed
   Wire.beginTransmission(0x68);
