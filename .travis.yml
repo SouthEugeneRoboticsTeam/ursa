@@ -18,8 +18,8 @@ install:
   - arduino --install-library "PID"
   - pip install -U cpplint
 script:
-  - make lint
   - build_platform esp32
+  - make lint
 notifications:
   email:
     on_success: change
