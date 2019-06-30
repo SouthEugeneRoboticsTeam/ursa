@@ -1,7 +1,7 @@
 #include "driver/rmt.h"
 #include <Wire.h>
 #include <PID_v1.h>
-#include <WiFi.h>
+#include <WiFi.h>//scl=22 sda=21
 #include <WiFiAP.h>
 #include <WiFiUdp.h>
 
@@ -9,7 +9,7 @@
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
 #define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
 #define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
-
+#define WiFiLossDisableIntervalMillis 1000 //if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
 // change the direction at which the motor is driven.
@@ -18,8 +18,9 @@
 #define RIGHT_STEP_PIN GPIO_NUM_25
 #define RIGHT_DIR_PIN GPIO_NUM_26
 
-#define wifiRecvBuf 50//max number of bytes to receive
-#define wifiSendBuf 50//max number of bytes to send
+#define maxWifiRecvBufSize 50//max number of bytes to receive
+#define maxWifiSendBufSize 50//max number of bytes to send
+int numBytesToSend = 0;
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
@@ -35,13 +36,14 @@ rmt_item32_t rightItems[1];
 WiFiUDP Udp;
 
 byte voltage = 0; //0v=0 13v=255
-volatile byte recvdData[wifiRecvBuf] = {0}; //array to hold data recieved from DS.
+volatile byte recvdData[maxWifiRecvBufSize] = {0}; //array to hold data recieved from DS.
 volatile boolean receivedNewData = false;//set true when data gotten, set false when parsed
-volatile byte dataToSend[wifiSendBuf] = {0}; //array to hold data to send to DS.
+volatile byte dataToSend[maxWifiSendBufSize] = {0}; //array to hold data to send to DS.
 byte numAuxRecv = 0; //how many bytes of control data for extra things
 byte auxRecvArray[12] = {0}; //size of numAuxRecv
 byte numSendAux = 0; //how many bytes of sensor data to send
 byte auxSendArray[12] = {0}; //size of numAuxSend
+unsigned long millisLastGotWifiMsg = 0;
 
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexReceive;  // used to check whether receiving tasks can safely change shared variables
@@ -56,7 +58,7 @@ int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotat
         rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;//"offset" values used to zero the MPU6050 gyro on startup
 unsigned long lastCalcedMPU6050 = 0;//micros() value of last orientation read. used to integrate gyro data to get rotation
 double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
-double pitch = 0.000;//output (in degrees) from the MPU6050 reading code. matters for self balancing.
+double pitch = 0.000;//output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
 
 float pitchOffset = 0.000; //subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
 double targetPitch = 0.000;//what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
@@ -109,20 +111,14 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
 
 void setup() {
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
-
-  Serial.begin(115200);//Set the serial monitor to the same value or you will see nothing or gibberish.
+  pinMode(2, OUTPUT);
+  Serial.begin(1000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
   mutexReceive = xSemaphoreCreateMutex();
   mutexSend = xSemaphoreCreateMutex();
-  leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
-  rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
-  timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
-  timerAttachInterrupt(rightStepTimer, &onRightStepTimer, true);
-  timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate //practically never
-  timerAlarmWrite(rightStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
   setupStepperRMTs();
   PIDA.SetMode(MANUAL);//PID loop off
   PIDS.SetMode(MANUAL);
@@ -144,25 +140,37 @@ void setup() {
     0,          /* Priority of the task */
     NULL,       /* Task handle. */
     0);  /* Core where the task should run */
+  leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
+  rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
+  timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
+  timerAttachInterrupt(rightStepTimer, &onRightStepTimer, true);
+  timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate //practically never
+  timerAlarmWrite(rightStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
 }
 void loop() {//on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
+  robotEnabled = enable;
   if (abs(pitch) > MAX_TIP) {
     tipped = true;
     robotEnabled = false;
   } else {
     tipped = false;
   }
+  if (millis() - millisLastGotWifiMsg > WiFiLossDisableIntervalMillis) {
+    robotEnabled = false;
+  }
 
   if (receivedNewData) {
-    if (xSemaphoreTake(mutexReceive, 0) == pdTRUE) {
-      createDataToSend();
+    if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
       parseDataReceived();
+      numBytesToSend = createDataToSend();
+      receivedNewData = false;
       xSemaphoreGive(mutexReceive);
     }
   }
 
   if (robotEnabled) {//run the following code if the robot is enabled
+    digitalWrite(2, HIGH);
     if (!wasRobotEnabled) {//the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       //TODO: turn on stepper motors
       PIDA.SetMode(AUTOMATIC);//turn on the PID
@@ -189,6 +197,7 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
       timerAlarmWrite(rightStepTimer, 10000000000000000, true); // don't step
     }
   } else {//disable
+    digitalWrite(2, LOW);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
     timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
@@ -196,13 +205,12 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
     //TODO: turn off stepper motors
-    delay(1000);
   }
 
   wasRobotEnabled = robotEnabled;
 }
 
-void createDataToSend() {
+int createDataToSend() {
   byte counter = 0;
 
   addByteToBuffer(robotEnabled, counter);
@@ -216,8 +224,9 @@ void createDataToSend() {
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
 
   for (int i = 0; i < numSendAux; i++) {
-    addByteToBuffer(auxSendArray[numSendAux], counter);  // extra data
+    addByteToBuffer(auxSendArray[i], counter);  // extra data
   }
+  return counter;
 }
 
 void parseDataReceived() {//put parse functions here
@@ -278,21 +287,21 @@ void setupStepperRMTs() {
 }
 
 void WiFiFunction(void * pvParameters) {
-  for (;;) {
+  for (;;) {//infinite loop
     //wifi recieve code:
     int packetSize = Udp.parsePacket();
     if (packetSize) {
       if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
         receivedNewData = true;
-        char packetBuffer[wifiRecvBuf];
-        Udp.read(packetBuffer, wifiRecvBuf);
-        for (int i = 0; i < wifiRecvBuf; i++) {
+        millisLastGotWifiMsg = millis();
+        char packetBuffer[maxWifiRecvBufSize];
+        Udp.read(packetBuffer, maxWifiRecvBufSize);
+        for (int i = 0; i < maxWifiRecvBufSize; i++) {
           recvdData[i] = (byte)packetBuffer[i];
         }
-        receivedNewData = true;
         Udp.beginPacket();
-        for (int i = 0; i < wifiSendBuf; i++) {//send response, maybe change to go less frequently
-          Udp.write(dataToSend[i]);
+        for (int i = 0; i < numBytesToSend; i++) {//send response, maybe change to go less frequently
+          Udp.write((byte)dataToSend[i]);
         }
         Udp.endPacket();
         xSemaphoreGive(mutexReceive);
@@ -336,16 +345,15 @@ void readMPU6050() {
   rotationX = Wire.read() << 8 | Wire.read();
   rotationY = Wire.read() << 8 | Wire.read();
   rotationZ = Wire.read() << 8 | Wire.read();
-  rotationDPS_X = (rotationX - rotationOffsetX) * 1000000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
-  rotationDPS_Y = (rotationY - rotationOffsetY) * 1000000.00 / 32766;
-  rotationDPS_Z = (rotationZ - rotationOffsetZ) * 1000000.00 / 32766;
-  if (micros() > lastCalcedMPU6050) {//try to handle micros' long overflow in a harmless way
-    lastCalcedMPU6050 = micros() - 10;
+  rotationDPS_X = (rotationX - rotationOffsetX) * 1000.00 / 32766;//zero gyro with offset values recorded on startup and convert to degrees per second
+  rotationDPS_Y = (rotationY - rotationOffsetY) * 1000.00 / 32766;
+  rotationDPS_Z = (rotationZ - rotationOffsetZ) * 1000.00 / 32766;
+  if (micros() < lastCalcedMPU6050) {//try to handle micros' long overflow in a harmless way
+    lastCalcedMPU6050 = micros() - 10000;
   }
-  pitch = .99 * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + .01 * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
+  pitch = .9997 * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + .0003 * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
   lastCalcedMPU6050 = micros();//record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
-
 void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
   rotationOffsetX = 0;
   rotationOffsetY = 0;
