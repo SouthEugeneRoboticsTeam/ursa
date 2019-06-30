@@ -113,12 +113,6 @@ void setup() {
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
-  leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
-  rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
-  timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
-  timerAttachInterrupt(rightStepTimer, &onRightStepTimer, true);
-  timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate //practically never
-  timerAlarmWrite(rightStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
   setupStepperRMTs();
   PIDA.SetMode(MANUAL);//PID loop off
   PIDS.SetMode(MANUAL);
@@ -135,6 +129,12 @@ void setup() {
   Serial.println(myIP);//should never change, DS will probably need it
   server.begin();
   Serial.println("Server started");
+  leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
+  rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
+  timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
+  timerAttachInterrupt(rightStepTimer, &onRightStepTimer, true);
+  timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate //practically never
+  timerAlarmWrite(rightStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
 }
 
 void loop() {//on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
