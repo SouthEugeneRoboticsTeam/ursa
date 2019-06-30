@@ -10,6 +10,8 @@
 #define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
 #define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 #define WiFiLossDisableIntervalMillis 1000 //if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
+float COMPLEMENTARY_FILTER_CONSTANT = .9997; //higher = more gyro based, lower=more accelerometer based
+
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
 // change the direction at which the motor is driven.
@@ -43,7 +45,7 @@ byte numAuxRecv = 0; //how many bytes of control data for extra things
 byte auxRecvArray[12] = {0}; //size of numAuxRecv
 byte numSendAux = 0; //how many bytes of sensor data to send
 byte auxSendArray[12] = {0}; //size of numAuxSend
-unsigned long millisLastGotWifiMsg = 0;
+unsigned long lastMessageTimeMillis = 0;
 
 //since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexReceive;  // used to check whether receiving tasks can safely change shared variables
@@ -133,7 +135,7 @@ void setup() {
   IPAddress myIP = WiFi.softAPIP();
   Udp.begin(2521);//port 2521 on 10.25.21.1 -needed by DS
   xTaskCreatePinnedToCore(//create task to run WiFi recieving
-    WiFiFunction,   /* Function to implement the task */
+    WiFiTaskFunction,   /* Function to implement the task */
     "WiFiTask", /* Name of the task */
     10000,      /* Stack size in words */
     NULL,       /* Task input parameter */
@@ -156,7 +158,7 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   } else {
     tipped = false;
   }
-  if (millis() - millisLastGotWifiMsg > WiFiLossDisableIntervalMillis) {
+  if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
     robotEnabled = false;
   }
 
@@ -286,7 +288,7 @@ void setupStepperRMTs() {
   rightItems[0].level1 = 0;
 }
 
-void WiFiFunction(void * pvParameters) {
+void WiFiTaskFunction(void * pvParameters) {
   for (;;) {//infinite loop
     //wifi recieve code:
     int packetSize = Udp.parsePacket();
@@ -351,9 +353,10 @@ void readMPU6050() {
   if (micros() < lastCalcedMPU6050) {//try to handle micros' long overflow in a harmless way
     lastCalcedMPU6050 = micros() - 10000;
   }
-  pitch = .9997 * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + .0003 * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
+  pitch = COMPLEMENTARY_FILTER_CONSTANT * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + (1 - COMPLEMENTARY_FILTER_CONSTANT) * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); //complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
   lastCalcedMPU6050 = micros();//record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
+
 void zeroMPU6050() {//find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
   rotationOffsetX = 0;
   rotationOffsetY = 0;
