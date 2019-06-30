@@ -2,8 +2,8 @@
 #include <Wire.h>
 #include <PID_v1.h>
 #include <WiFi.h>
-#include <WiFiClient.h>
 #include <WiFiAP.h>
+#include <WiFiUdp.h>
 
 #define ROBOT_ID 0      // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
@@ -18,6 +18,8 @@
 #define RIGHT_STEP_PIN GPIO_NUM_25
 #define RIGHT_DIR_PIN GPIO_NUM_26
 
+#define wifiRecvBuf 50//max number of bytes to receive
+#define wifiSendBuf 50//max number of bytes to send
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
@@ -30,12 +32,12 @@ rmt_item32_t leftItems[1]; // holds definition of pulse for stepper motor
 rmt_config_t rightConfig;
 rmt_item32_t rightItems[1];
 
-WiFiServer server(80);
+WiFiUDP Udp;
+
 byte voltage = 0; //0v=0 13v=255
-int signalStrength = -100;
-volatile byte recvdData[50] = {0}; //array to hold data recieved from DS.
+volatile byte recvdData[wifiRecvBuf] = {0}; //array to hold data recieved from DS.
 volatile boolean receivedNewData = false;//set true when data gotten, set false when parsed
-volatile byte dataToSend[50] = {0}; //array to hold data to send to DS.
+volatile byte dataToSend[wifiSendBuf] = {0}; //array to hold data to send to DS.
 byte numAuxRecv = 0; //how many bytes of control data for extra things
 byte auxRecvArray[12] = {0}; //size of numAuxRecv
 byte numSendAux = 0; //how many bytes of sensor data to send
@@ -50,7 +52,7 @@ boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
 boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
 
-int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ, \
+int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ,
         rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;//"offset" values used to zero the MPU6050 gyro on startup
 unsigned long lastCalcedMPU6050 = 0;//micros() value of last orientation read. used to integrate gyro data to get rotation
 double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;//rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
@@ -108,11 +110,13 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
 void setup() {
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
 
-  Serial.begin(2000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
+  Serial.begin(115200);//Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
+  mutexReceive = xSemaphoreCreateMutex();
+  mutexSend = xSemaphoreCreateMutex();
   leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   rightStepTimer = timerBegin(3, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
   timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
@@ -127,16 +131,20 @@ void setup() {
   PIDA.SetOutputLimits(-MAX_TIP, MAX_TIP);
   PIDS.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
   setupMPU6050();//this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
-  zeroMPU6050();//this function averages some gyro readings so later the readings can be calibrated to zero. This function counts on the robot being still, so the robot needs to be powered on while lying on the ground
-  DBserialPrintCurrentCore("setup");//print what core this code is running on. see the declaration of this function lower down for details
   WiFi.softAP(robotSSID, robotPass);//start wifi network, code may need to be added after this to wait for it to start
+  zeroMPU6050();//this function averages some gyro readings so later the readings can be calibrated to zero. This function counts on the robot being still, so the robot needs to be powered on while lying on the ground
+  WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
   IPAddress myIP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
-  Serial.println(myIP);//should never change, DS will probably need it
-  server.begin();
-  Serial.println("Server started");
+  Udp.begin(2521);//port 2521 on 10.25.21.1 -needed by DS
+  xTaskCreatePinnedToCore(//create task to run WiFi recieving
+    WiFiFunction,   /* Function to implement the task */
+    "WiFiTask", /* Name of the task */
+    10000,      /* Stack size in words */
+    NULL,       /* Task input parameter */
+    0,          /* Priority of the task */
+    NULL,       /* Task handle. */
+    0);  /* Core where the task should run */
 }
-
 void loop() {//on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
   if (abs(pitch) > MAX_TIP) {
@@ -148,8 +156,8 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
 
   if (receivedNewData) {
     if (xSemaphoreTake(mutexReceive, 0) == pdTRUE) {
-      parseDataReceived();
       createDataToSend();
+      parseDataReceived();
       xSemaphoreGive(mutexReceive);
     }
   }
@@ -188,8 +196,7 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
     //TODO: turn off stepper motors
-    delay(2000);
-    DBserialPrintCurrentCore("(disabled) loop");//print debugging test of what core the loop is running on
+    delay(1000);
   }
 
   wasRobotEnabled = robotEnabled;
@@ -204,7 +211,6 @@ void createDataToSend() {
   addByteToBuffer(MODEL_NO, counter);
   addFloatToBuffer(pitch, counter);
   addByteToBuffer(voltage, counter);
-  addByteToBuffer(constrain(map(signalStrength, -180, 10, 0, 255), 0, 255), counter);  // wifi RSSI, higher=better
   addIntToBuffer(leftMotorSpeed, counter);
   addIntToBuffer(rightMotorSpeed, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
@@ -254,7 +260,7 @@ void setupStepperRMTs() {
   leftItems[0].level1 = 0;
 
   rightConfig.rmt_mode = RMT_MODE_TX;
-  rightConfig.channel = RMT_CHANNEL_0;
+  rightConfig.channel = RMT_CHANNEL_1;
   rightConfig.gpio_num = RIGHT_STEP_PIN;
   rightConfig.mem_block_num = 1;
   rightConfig.tx_config.loop_en = 0;
@@ -271,44 +277,29 @@ void setupStepperRMTs() {
   rightItems[0].level1 = 0;
 }
 
-void DBserialPrintCurrentCore(String msg) { //function for DeBugging, packages and prints the core the function is called from
-  Serial.print(msg);
-  Serial.print(" running on core #");
-  Serial.println(xPortGetCoreID());//prints which core this code is running on
-}
-
-void WiFiEvent(WiFiEvent_t event) {//this function is hopefully called automatically when something wifiy happens, including recieving a message
-  DBserialPrintCurrentCore("wifi event");
-  Serial.print("wifi event: ");
-  Serial.println(event);
-  Serial.print("WiFi.RSSI=");
-  Serial.println(WiFi.RSSI());//Recieved Signal Strength Indicator, less negative numbers mean a stronger recieved signal
-
-  //wifi recieve code:
-  WiFiClient client = server.available();
-  if (client) {
-    if (xSemaphoreTake(mutexReceive, 0) == pdTRUE) {
-      Serial.println("got wifi recieve mutex");
-      byte count = 0;
-      while (client.available()) {
-        char c = client.read();
-        recvdData[count] = c;
-        count++;
+void WiFiFunction(void * pvParameters) {
+  for (;;) {
+    //wifi recieve code:
+    int packetSize = Udp.parsePacket();
+    if (packetSize) {
+      if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
         receivedNewData = true;
-        Serial.write(c);
+        char packetBuffer[wifiRecvBuf];
+        Udp.read(packetBuffer, wifiRecvBuf);
+        for (int i = 0; i < wifiRecvBuf; i++) {
+          recvdData[i] = (byte)packetBuffer[i];
+        }
+        receivedNewData = true;
+        Udp.beginPacket();
+        for (int i = 0; i < wifiSendBuf; i++) {//send response, maybe change to go less frequently
+          Udp.write(dataToSend[i]);
+        }
+        Udp.endPacket();
+        xSemaphoreGive(mutexReceive);
       }
-
-      for (int i = 0; i < count; i++) {//send response, maybe change to go less frequently
-        client.write(dataToSend[i]);
-      }
-
-      xSemaphoreGive(mutexReceive);
     }
-
-    Serial.println(" wifi end");
   }
 }
-
 //start I2C communication and send commands to set up the MPU6050.
 //A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
 //and then sending a new register value
