@@ -1,7 +1,7 @@
 #include "driver/rmt.h"
-#include <Wire.h>
+#include <Wire.h>//scl=22 sda=21
 #include <PID_v1.h>
-#include <WiFi.h>//scl=22 sda=21
+#include <WiFi.h>
 #include <WiFiAP.h>
 #include <WiFiUdp.h>
 
@@ -27,6 +27,7 @@ int numBytesToSend = 0;
 char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
 
+#define LED_BUILTIN 2
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
 
@@ -113,8 +114,8 @@ void IRAM_ATTR onRightStepTimer() { //Interrupt function called by timer
 
 void setup() {
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
-  pinMode(2, OUTPUT);
-  Serial.begin(1000000);//Set the serial monitor to the same value or you will see nothing or gibberish.
+  pinMode(LED_BUILTIN, OUTPUT);
+  Serial.begin(115200);//for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
@@ -172,7 +173,7 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   }
 
   if (robotEnabled) {//run the following code if the robot is enabled
-    digitalWrite(2, HIGH);
+    digitalWrite(LED_BUILTIN, HIGH);
     if (!wasRobotEnabled) {//the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       //TODO: turn on stepper motors
       PIDA.SetMode(AUTOMATIC);//turn on the PID
@@ -199,7 +200,7 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
       timerAlarmWrite(rightStepTimer, 10000000000000000, true); // don't step
     }
   } else {//disable
-    digitalWrite(2, LOW);
+    digitalWrite(LED_BUILTIN, LOW);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
     timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
@@ -295,7 +296,7 @@ void WiFiTaskFunction(void * pvParameters) {
     if (packetSize) {
       if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
         receivedNewData = true;
-        millisLastGotWifiMsg = millis();
+        lastMessageTimeMillis = millis();
         char packetBuffer[maxWifiRecvBufSize];
         Udp.read(packetBuffer, maxWifiRecvBufSize);
         for (int i = 0; i < maxWifiRecvBufSize; i++) {
