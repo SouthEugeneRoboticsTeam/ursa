@@ -140,7 +140,7 @@ void setup() {
     "WiFiTask", /* Name of the task */
     10000,      /* Stack size in words */
     NULL,       /* Task input parameter */
-    0,          /* Priority of the task */
+    1,          /* Priority of the task */
     NULL,       /* Task handle. */
     0);  /* Core where the task should run */
   leftStepTimer = timerBegin(2, 80, true); // 80Mhz / 80  = 1Mhz, 1microsecond
@@ -310,6 +310,7 @@ void WiFiTaskFunction(void * pvParameters) {
         xSemaphoreGive(mutexReceive);
       }
     }
+    vTaskDelay(10);
   }
 }
 //start I2C communication and send commands to set up the MPU6050.
