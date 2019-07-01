@@ -133,7 +133,7 @@ void setup() {
   WiFi.softAP(robotSSID, robotPass);//start wifi network, code may need to be added after this to wait for it to start
   zeroMPU6050();//this function averages some gyro readings so later the readings can be calibrated to zero. This function counts on the robot being still, so the robot needs to be powered on while lying on the ground
   WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
-  //IPAddress myIP = WiFi.softAPIP();
+  IPAddress myIP = WiFi.softAPIP();
   Udp.begin(2521);//port 2521 on 10.25.21.1 -needed by DS
   xTaskCreatePinnedToCore(//create task to run WiFi recieving
     WiFiTaskFunction,   /* Function to implement the task */
@@ -152,6 +152,14 @@ void setup() {
 }
 void loop() {//on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
+  if (receivedNewData) {
+    if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
+      parseDataReceived();
+      numBytesToSend = createDataToSend();
+      receivedNewData = false;
+      xSemaphoreGive(mutexReceive);
+    }
+  }
   robotEnabled = enable;
   if (abs(pitch) > MAX_TIP) {
     tipped = true;
@@ -161,15 +169,6 @@ void loop() {//on core 1. the balencing control loop will be here, with the goal
   }
   if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
     robotEnabled = false;
-  }
-
-  if (receivedNewData) {
-    if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
-      parseDataReceived();
-      numBytesToSend = createDataToSend();
-      receivedNewData = false;
-      xSemaphoreGive(mutexReceive);
-    }
   }
 
   if (robotEnabled) {//run the following code if the robot is enabled
