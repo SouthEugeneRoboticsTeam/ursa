@@ -196,22 +196,22 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the right motor should go
 
     if (abs(leftMotorSpeed) >= 1) {
-      timerAlarmWrite(leftStepTimer, 1000000 / leftMotorSpeed, true); // 1Mhz / # =  rate
+      timerAlarmWrite(leftStepTimer, 1000000 / leftMotorSpeed, true);  // 1Mhz / # =  rate
     } else {
-      timerAlarmWrite(leftStepTimer, 10000000000000000, true); // don't step
+      timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // don't step
     }
 
     if (abs(rightMotorSpeed) >= 1) {
-      timerAlarmWrite(rightStepTimer, 1000000 / rightMotorSpeed, true); // 1Mhz / # =  rate
+      timerAlarmWrite(rightStepTimer, 1000000 / rightMotorSpeed, true);  // 1Mhz / # =  rate
     } else {
-      timerAlarmWrite(rightStepTimer, 10000000000000000, true); // don't step
+      timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
     }
   } else {  // disable
     digitalWrite(LED_BUILTIN, LOW);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
-    timerAlarmWrite(leftStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
-    timerAlarmWrite(rightStepTimer, 10000000000000000, true); // 1Mhz / # =  rate
+    timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
+    timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
     // TODO: turn off stepper motors
@@ -243,7 +243,7 @@ void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
   speedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED, MAX_SPEED);  // 0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50); // 0=left, 255=right
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 255=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
 
   for (int i = 0; i < numAuxRecv; i++) {
