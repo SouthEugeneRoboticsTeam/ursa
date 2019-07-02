@@ -19,7 +19,7 @@ float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower
 #define LEFT_DIR_PIN GPIO_NUM_33
 #define RIGHT_STEP_PIN GPIO_NUM_34
 #define RIGHT_DIR_PIN GPIO_NUM_35
-#define ENS_PIN GPIO_NUM_39 // pin wired to both motor driver chips' ENable pins, to turn on and off motors
+#define ENS_PIN GPIO_NUM_23 // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
