@@ -7,8 +7,8 @@
 
 #define ROBOT_ID 0      // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
-#define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
-#define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
+int MAX_SPEED = 4000; // max speed (in steps/sec) that the motors can run at
+float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 #define WiFiLossDisableIntervalMillis 1000    // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 
@@ -51,7 +51,6 @@ unsigned long lastMessageTimeMillis = 0;
 
 // since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexReceive;  // used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;     // used to check whether sending tasks can safely change shared variables
 
 boolean robotEnabled = false;     // enable outputs?
 boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
@@ -115,10 +114,9 @@ void IRAM_ATTR onRightStepTimer() {  // Interrupt function called by timer
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, HIGH);
 
   mutexReceive = xSemaphoreCreateMutex();
-  mutexSend = xSemaphoreCreateMutex();
 
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
   Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
@@ -159,7 +157,7 @@ void setup() {
   timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate // practically never
   timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
 
-  pinMode(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
@@ -172,7 +170,6 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       xSemaphoreGive(mutexReceive);
     }
   }
-
   robotEnabled = enable;
   if (abs(pitch) > MAX_TIP) {
     tipped = true;
@@ -228,16 +225,16 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
 int createDataToSend() {
   byte counter = 0;
 
-  addByteToBuffer(robotEnabled, counter);
-  addByteToBuffer(tipped, counter);
+  addBoolToBuffer(robotEnabled, counter);
+  addBoolToBuffer(tipped, counter);
   addByteToBuffer(ROBOT_ID, counter);
   addByteToBuffer(MODEL_NO, counter);
   addFloatToBuffer(pitch, counter);
   addByteToBuffer(voltage, counter);
   addIntToBuffer(leftMotorSpeed, counter);
   addIntToBuffer(rightMotorSpeed, counter);
+  addFloatToBuffer(targetPitch, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
-
   for (int i = 0; i < numSendAux; i++) {
     addByteToBuffer(auxSendArray[i], counter);  // extra data
   }
@@ -250,11 +247,9 @@ void parseDataReceived() {  // put parse functions here
   speedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED, MAX_SPEED);  // 0=back, 127/8=stop, 255=forwards
   turnSpeedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 255=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
-
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);
   }
-
   if (readBoolFromBuffer(counter)) {
     kP_angle = readFloatFromBuffer(counter);
     kI_angle = readFloatFromBuffer(counter);
@@ -312,11 +307,11 @@ void WiFiTaskFunction(void * pvParameters) {
         char packetBuffer[maxWifiRecvBufSize];
         Udp.read(packetBuffer, maxWifiRecvBufSize);
         for (int i = 0; i < maxWifiRecvBufSize; i++) {
-          recvdData[i] = (byte)packetBuffer[i];
+          recvdData[i] = (byte)((int)(256 + packetBuffer[i]) % 256);
         }
         Udp.beginPacket();
         for (int i = 0; i < numBytesToSend; i++) {  // send response, maybe change to go less frequently
-          Udp.write((byte)dataToSend[i]);
+          Udp.write(dataToSend[i]);
         }
         Udp.endPacket();
         xSemaphoreGive(mutexReceive);
@@ -411,14 +406,18 @@ byte readByteFromBuffer(byte &pos) {  // return byte at pos position in recvdDat
 
 int readIntFromBuffer(byte &pos) {  // return int from two bytes starting at pos position in recvdData
   union {  // this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https:// www.mcgurrin.info/robots/127/
-    byte b[2];
+    byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
   d.b[0] = recvdData[pos];  // read the first byte
   pos++;  // increment i to the location of the second byte
   d.b[1] = recvdData[pos];  // read the second byte
+  pos++;  // increment i to the location of the third byte
+  d.b[2] = recvdData[pos];  // read the second byte
+  pos++;  // increment i to the location of the fourth byte
+  d.b[3] = recvdData[pos];  // read the second byte
   pos++;  // shift i once more so it's ready for the next function (at the position of the start of the next value)
-  return d.v;  // return the int form of union d
+  return d.v; // return the int form of union d
 }
 
 float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at pos position in recvdData
@@ -447,15 +446,19 @@ void addByteToBuffer(byte msg, byte &pos) {  // add a byte to the tosendData arr
   pos++;
 }
 
-void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array (two bytes)
+void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array (four bytes)
   union {
-    byte b[2];
+    byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;  // put the value into the union as an int
   dataToSend[pos] = d.b[0];
   pos++;
   dataToSend[pos] = d.b[1];
+  pos++;
+  dataToSend[pos] = d.b[2];
+  pos++;
+  dataToSend[pos] = d.b[3];
   pos++;
 }
 
