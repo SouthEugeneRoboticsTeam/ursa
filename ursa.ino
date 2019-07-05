@@ -7,10 +7,10 @@
 
 #define ROBOT_ID 0      // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
-int MAX_SPEED = 4000; // max speed (in steps/sec) that the motors can run at
-float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 #define WiFiLossDisableIntervalMillis 1000    // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
+int MAX_SPEED = 4000; // max speed (in steps/sec) that the motors can run at
+float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -409,14 +409,10 @@ int readIntFromBuffer(byte &pos) {  // return int from two bytes starting at pos
     byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
-  d.b[0] = recvdData[pos];  // read the first byte
-  pos++;  // increment i to the location of the second byte
-  d.b[1] = recvdData[pos];  // read the second byte
-  pos++;  // increment i to the location of the third byte
-  d.b[2] = recvdData[pos];  // read the second byte
-  pos++;  // increment i to the location of the fourth byte
-  d.b[3] = recvdData[pos];  // read the second byte
-  pos++;  // shift i once more so it's ready for the next function (at the position of the start of the next value)
+  for (int i = 0; i < 4; i++) {
+    d.b[i] = recvdData[pos];
+    pos++;
+  }
   return d.v; // return the int form of union d
 }
 
@@ -425,14 +421,10 @@ float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at
     byte b[4];
     float v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
-  d.b[0] = recvdData[pos];
-  pos++;
-  d.b[1] = recvdData[pos];
-  pos++;
-  d.b[2] = recvdData[pos];
-  pos++;
-  d.b[3] = recvdData[pos];
-  pos++;
+  for (int i = 0; i < 4; i++) {
+    d.b[i] = recvdData[pos];
+    pos++;
+  }
   return d.v;
 }
 
@@ -452,14 +444,10 @@ void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;  // put the value into the union as an int
-  dataToSend[pos] = d.b[0];
-  pos++;
-  dataToSend[pos] = d.b[1];
-  pos++;
-  dataToSend[pos] = d.b[2];
-  pos++;
-  dataToSend[pos] = d.b[3];
-  pos++;
+  for (int i = 0; i < 4; i++) {
+    d.b[i] = dataToSend[pos];
+    pos++;
+  }
 }
 
 void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData array (four bytes)
@@ -468,12 +456,8 @@ void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData 
     float v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
   d.v = msg;
-  dataToSend[pos] = d.b[0];
-  pos++;
-  dataToSend[pos] = d.b[1];
-  pos++;
-  dataToSend[pos] = d.b[2];
-  pos++;
-  dataToSend[pos] = d.b[3];
-  pos++;
+  for (int i = 0; i < 4; i++) {
+    d.b[i] = dataToSend[pos];
+    pos++;
+  }
 }
