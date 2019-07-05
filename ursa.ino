@@ -244,8 +244,8 @@ int createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED, MAX_SPEED);  // 0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 255=right
+  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED, MAX_SPEED);  // 0=back, 127/8=stop, 255=forwards
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 255=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);
