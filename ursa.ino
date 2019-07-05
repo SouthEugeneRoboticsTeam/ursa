@@ -402,7 +402,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
       digitalWrite(LED_BUILTIN, i % 2);
       delay(25);
     }
-  } while (abs(rotationOffsetX) > 100 || abs(rotationOffsetY) > 100 || abs(rotationOffsetZ) > 100);
+  } while (abs(rotationOffsetX) > 500 || abs(rotationOffsetY) > 500 || abs(rotationOffsetZ) > 500);
 
   rotationOffsetX = 0;
   rotationOffsetY = 0;
