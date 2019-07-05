@@ -20,15 +20,14 @@ float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover f
 #define RIGHT_STEP_PIN GPIO_NUM_34
 #define RIGHT_DIR_PIN GPIO_NUM_35
 #define ENS_PIN GPIO_NUM_23 // pin wired to both motor driver chips' ENable pins, to turn on and off motors
+#define LED_BUILTIN 2
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
-int numBytesToSend = 0;
+byte numBytesToSend = 0;
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
-
-#define LED_BUILTIN 2
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
 
@@ -244,8 +243,8 @@ int createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED, MAX_SPEED);  // 0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 255=right
+  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED, MAX_SPEED);  // 0=back, 100/8=stop, 200=forwards
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 200=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);
@@ -404,8 +403,8 @@ byte readByteFromBuffer(byte &pos) {  // return byte at pos position in recvdDat
   return msg;
 }
 
-int readIntFromBuffer(byte &pos) {  // return int from two bytes starting at pos position in recvdData
-  union {  // this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https:// www.mcgurrin.info/robots/127/
+int readIntFromBuffer(byte &pos) {  // return int from four bytes starting at pos position in recvdData
+  union {  // this lets us translate between two variable types (equal size, but one's four bytes in an array, and one's a four byte int)  Reference for unions: https:// www.mcgurrin.info/robots/127/
     byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
@@ -445,7 +444,7 @@ void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;  // put the value into the union as an int
   for (int i = 0; i < 4; i++) {
-    d.b[i] = dataToSend[pos];
+    dataToSend[pos] = d.b[i];
     pos++;
   }
 }
@@ -457,7 +456,7 @@ void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData 
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
   d.v = msg;
   for (int i = 0; i < 4; i++) {
-    d.b[i] = dataToSend[pos];
+    dataToSend[pos] = d.b[i];
     pos++;
   }
 }
