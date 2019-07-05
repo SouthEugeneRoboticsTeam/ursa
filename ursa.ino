@@ -56,8 +56,8 @@ boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
 boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
 
-int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ,
-        rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
+int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ = 0;
+int32_t rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
 unsigned long lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
 double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;  // rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
 double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
@@ -366,6 +366,44 @@ void readMPU6050() {
 }
 
 void zeroMPU6050() {  // find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
+  do {
+    Wire.beginTransmission(0x68);
+    Wire.write(0x3B);
+    Wire.endTransmission(false);
+    Wire.requestFrom(0x68, 14, true);
+    accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
+    accelerationY = Wire.read() << 8 | Wire.read();
+    accelerationZ = Wire.read() << 8 | Wire.read();
+    Wire.read(); Wire.read();  // throw away temperature
+    int16_t lastrotationX = Wire.read() << 8 | Wire.read();
+    int16_t lastrotationY = Wire.read() << 8 | Wire.read();
+    int16_t lastrotationZ = Wire.read() << 8 | Wire.read();
+    rotationOffsetX = 0;
+    rotationOffsetY = 0;
+    rotationOffsetZ = 0;
+    for (int i = 0; i < 15; i++) {
+      Wire.beginTransmission(0x68);
+      Wire.write(0x3B);
+      Wire.endTransmission(false);
+      Wire.requestFrom(0x68, 14, true);
+      accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
+      accelerationY = Wire.read() << 8 | Wire.read();
+      accelerationZ = Wire.read() << 8 | Wire.read();
+      Wire.read(); Wire.read();  // throw away temperature
+      rotationX = Wire.read() << 8 | Wire.read();
+      rotationY = Wire.read() << 8 | Wire.read();
+      rotationZ = Wire.read() << 8 | Wire.read();
+      rotationOffsetX += abs(rotationX - lastrotationX);
+      rotationOffsetY += abs(rotationY - lastrotationY);
+      rotationOffsetZ += abs(rotationZ - lastrotationZ);
+      lastrotationX = rotationX;
+      lastrotationY = rotationY;
+      lastrotationZ = rotationZ;
+      digitalWrite(LED_BUILTIN, i % 2);
+      delay(25);
+    }
+  } while (abs(rotationOffsetX) > 100 || abs(rotationOffsetY) > 100 || abs(rotationOffsetZ) > 100);
+
   rotationOffsetX = 0;
   rotationOffsetY = 0;
   rotationOffsetZ = 0;
