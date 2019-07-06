@@ -366,6 +366,8 @@ void readMPU6050() {
 }
 
 void zeroMPU6050() {  // find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
+#define movementThreshold 34
+#define movementMeasurements 15
   do {
     Wire.beginTransmission(0x68);
     Wire.write(0x3B);
@@ -381,7 +383,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
     rotationOffsetX = 0;
     rotationOffsetY = 0;
     rotationOffsetZ = 0;
-    for (int i = 0; i < 15; i++) {
+    for (int i = 0; i < movementMeasurements; i++) {
       Wire.beginTransmission(0x68);
       Wire.write(0x3B);
       Wire.endTransmission(false);
@@ -402,7 +404,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
       digitalWrite(LED_BUILTIN, i % 2);
       delay(25);
     }
-  } while (abs(rotationOffsetX) > 500 || abs(rotationOffsetY) > 500 || abs(rotationOffsetZ) > 500);
+  } while (abs(rotationOffsetX) > movementThreshold * movementMeasurements || abs(rotationOffsetY) > movementThreshold * movementMeasurements || abs(rotationOffsetZ) > movementThreshold * movementMeasurements);
 
   rotationOffsetX = 0;
   rotationOffsetY = 0;
