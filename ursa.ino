@@ -7,10 +7,10 @@
 
 #define ROBOT_ID 0      // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
-#define MAX_SPEED 4000  // max speed (in steps/sec) that the motors can run at
-#define MAX_TIP 33.3    // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 #define WiFiLossDisableIntervalMillis 1000    // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
+int MAX_SPEED = 4000; // max speed (in steps/sec) that the motors can run at
+float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -20,15 +20,14 @@ float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower
 #define RIGHT_STEP_PIN GPIO_NUM_34
 #define RIGHT_DIR_PIN GPIO_NUM_35
 #define ENS_PIN GPIO_NUM_23 // pin wired to both motor driver chips' ENable pins, to turn on and off motors
+#define LED_BUILTIN 2
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
-int numBytesToSend = 0;
+byte numBytesToSend = 0;
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
-
-#define LED_BUILTIN 2
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
 
@@ -51,15 +50,14 @@ unsigned long lastMessageTimeMillis = 0;
 
 // since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexReceive;  // used to check whether receiving tasks can safely change shared variables
-SemaphoreHandle_t mutexSend;     // used to check whether sending tasks can safely change shared variables
 
 boolean robotEnabled = false;     // enable outputs?
 boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
 boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
 
-int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ,
-        rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
+int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ = 0;
+int32_t rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
 unsigned long lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
 double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;  // rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
 double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
@@ -115,10 +113,9 @@ void IRAM_ATTR onRightStepTimer() {  // Interrupt function called by timer
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, HIGH);
 
   mutexReceive = xSemaphoreCreateMutex();
-  mutexSend = xSemaphoreCreateMutex();
 
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
   Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
@@ -159,7 +156,7 @@ void setup() {
   timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate // practically never
   timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
 
-  pinMode(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
@@ -172,7 +169,6 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       xSemaphoreGive(mutexReceive);
     }
   }
-
   robotEnabled = enable;
   if (abs(pitch) > MAX_TIP) {
     tipped = true;
@@ -228,16 +224,16 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
 int createDataToSend() {
   byte counter = 0;
 
-  addByteToBuffer(robotEnabled, counter);
-  addByteToBuffer(tipped, counter);
+  addBoolToBuffer(robotEnabled, counter);
+  addBoolToBuffer(tipped, counter);
   addByteToBuffer(ROBOT_ID, counter);
   addByteToBuffer(MODEL_NO, counter);
   addFloatToBuffer(pitch, counter);
   addByteToBuffer(voltage, counter);
   addIntToBuffer(leftMotorSpeed, counter);
   addIntToBuffer(rightMotorSpeed, counter);
+  addFloatToBuffer(targetPitch, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
-
   for (int i = 0; i < numSendAux; i++) {
     addByteToBuffer(auxSendArray[i], counter);  // extra data
   }
@@ -247,14 +243,12 @@ int createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED, MAX_SPEED);  // 0=back, 127/8=stop, 255=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 255, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 255=right
+  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED, MAX_SPEED);  // 0=back, 100/8=stop, 200=forwards
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 200=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
-
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);
   }
-
   if (readBoolFromBuffer(counter)) {
     kP_angle = readFloatFromBuffer(counter);
     kI_angle = readFloatFromBuffer(counter);
@@ -312,11 +306,11 @@ void WiFiTaskFunction(void * pvParameters) {
         char packetBuffer[maxWifiRecvBufSize];
         Udp.read(packetBuffer, maxWifiRecvBufSize);
         for (int i = 0; i < maxWifiRecvBufSize; i++) {
-          recvdData[i] = (byte)packetBuffer[i];
+          recvdData[i] = (byte)((int)(256 + packetBuffer[i]) % 256);
         }
         Udp.beginPacket();
         for (int i = 0; i < numBytesToSend; i++) {  // send response, maybe change to go less frequently
-          Udp.write((byte)dataToSend[i]);
+          Udp.write(dataToSend[i]);
         }
         Udp.endPacket();
         xSemaphoreGive(mutexReceive);
@@ -372,6 +366,46 @@ void readMPU6050() {
 }
 
 void zeroMPU6050() {  // find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
+#define movementThreshold 34
+#define movementMeasurements 15
+  do {
+    Wire.beginTransmission(0x68);
+    Wire.write(0x3B);
+    Wire.endTransmission(false);
+    Wire.requestFrom(0x68, 14, true);
+    accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
+    accelerationY = Wire.read() << 8 | Wire.read();
+    accelerationZ = Wire.read() << 8 | Wire.read();
+    Wire.read(); Wire.read();  // throw away temperature
+    int16_t lastrotationX = Wire.read() << 8 | Wire.read();
+    int16_t lastrotationY = Wire.read() << 8 | Wire.read();
+    int16_t lastrotationZ = Wire.read() << 8 | Wire.read();
+    rotationOffsetX = 0;
+    rotationOffsetY = 0;
+    rotationOffsetZ = 0;
+    for (int i = 0; i < movementMeasurements; i++) {
+      Wire.beginTransmission(0x68);
+      Wire.write(0x3B);
+      Wire.endTransmission(false);
+      Wire.requestFrom(0x68, 14, true);
+      accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
+      accelerationY = Wire.read() << 8 | Wire.read();
+      accelerationZ = Wire.read() << 8 | Wire.read();
+      Wire.read(); Wire.read();  // throw away temperature
+      rotationX = Wire.read() << 8 | Wire.read();
+      rotationY = Wire.read() << 8 | Wire.read();
+      rotationZ = Wire.read() << 8 | Wire.read();
+      rotationOffsetX += abs(rotationX - lastrotationX);
+      rotationOffsetY += abs(rotationY - lastrotationY);
+      rotationOffsetZ += abs(rotationZ - lastrotationZ);
+      lastrotationX = rotationX;
+      lastrotationY = rotationY;
+      lastrotationZ = rotationZ;
+      digitalWrite(LED_BUILTIN, i % 2);
+      delay(25);
+    }
+  } while (abs(rotationOffsetX) > movementThreshold * movementMeasurements || abs(rotationOffsetY) > movementThreshold * movementMeasurements || abs(rotationOffsetZ) > movementThreshold * movementMeasurements);
+
   rotationOffsetX = 0;
   rotationOffsetY = 0;
   rotationOffsetZ = 0;
@@ -409,16 +443,16 @@ byte readByteFromBuffer(byte &pos) {  // return byte at pos position in recvdDat
   return msg;
 }
 
-int readIntFromBuffer(byte &pos) {  // return int from two bytes starting at pos position in recvdData
-  union {  // this lets us translate between two variable types (equal size, but one's two bytes in an array, and one's a two byte int)  Reference for unions: https:// www.mcgurrin.info/robots/127/
-    byte b[2];
+int readIntFromBuffer(byte &pos) {  // return int from four bytes starting at pos position in recvdData
+  union {  // this lets us translate between two variable types (equal size, but one's four bytes in an array, and one's a four byte int)  Reference for unions: https:// www.mcgurrin.info/robots/127/
+    byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
-  d.b[0] = recvdData[pos];  // read the first byte
-  pos++;  // increment i to the location of the second byte
-  d.b[1] = recvdData[pos];  // read the second byte
-  pos++;  // shift i once more so it's ready for the next function (at the position of the start of the next value)
-  return d.v;  // return the int form of union d
+  for (int i = 0; i < 4; i++) {
+    d.b[i] = recvdData[pos];
+    pos++;
+  }
+  return d.v; // return the int form of union d
 }
 
 float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at pos position in recvdData
@@ -426,14 +460,10 @@ float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at
     byte b[4];
     float v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
-  d.b[0] = recvdData[pos];
-  pos++;
-  d.b[1] = recvdData[pos];
-  pos++;
-  d.b[2] = recvdData[pos];
-  pos++;
-  d.b[3] = recvdData[pos];
-  pos++;
+  for (int i = 0; i < 4; i++) {
+    d.b[i] = recvdData[pos];
+    pos++;
+  }
   return d.v;
 }
 
@@ -447,16 +477,16 @@ void addByteToBuffer(byte msg, byte &pos) {  // add a byte to the tosendData arr
   pos++;
 }
 
-void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array (two bytes)
+void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array (four bytes)
   union {
-    byte b[2];
+    byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
   d.v = msg;  // put the value into the union as an int
-  dataToSend[pos] = d.b[0];
-  pos++;
-  dataToSend[pos] = d.b[1];
-  pos++;
+  for (int i = 0; i < 4; i++) {
+    dataToSend[pos] = d.b[i];
+    pos++;
+  }
 }
 
 void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData array (four bytes)
@@ -465,12 +495,8 @@ void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData 
     float v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
   d.v = msg;
-  dataToSend[pos] = d.b[0];
-  pos++;
-  dataToSend[pos] = d.b[1];
-  pos++;
-  dataToSend[pos] = d.b[2];
-  pos++;
-  dataToSend[pos] = d.b[3];
-  pos++;
+  for (int i = 0; i < 4; i++) {
+    dataToSend[pos] = d.b[i];
+    pos++;
+  }
 }
