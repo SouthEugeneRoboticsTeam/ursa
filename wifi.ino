@@ -1,22 +1,3 @@
-#include "wifi.h"
-
-void setupWifi() {
-  WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(robotSSID, robotPass);  // start wifi network, code may need to be added after this to wait for it to start
-  IPAddress myIP = WiFi.softAPIP();
-  Udp.begin(2521);  // port 2521 on 10.25.21.1 -needed by DS
-
-  xTaskCreatePinnedToCore(  // create task to run WiFi recieving
-    WiFiTaskFunction,   /* Function to implement the task */
-    "WiFiTask",  /* Name of the task */
-    15000,       /* Stack size in words */
-    NULL,        /* Task input parameter */
-    1,           /* Priority of the task */
-    NULL,        /* Task handle. */
-    0            /* Core on which task should run */
-  );
-}
-
 void WiFiTaskFunction(void * pvParameters) {
   while (true) {  // infinite loop
     // wifi recieve code:
@@ -46,6 +27,23 @@ void WiFiTaskFunction(void * pvParameters) {
 
     vTaskDelay(10);  // allow idle task to run so task watchdog timer isn't triggered
   }
+}
+
+void setupWifi() {
+  WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
+  WiFi.softAP(robotSSID, robotPass);  // start wifi network, code may need to be added after this to wait for it to start
+  IPAddress myIP = WiFi.softAPIP();
+  Udp.begin(2521);  // port 2521 on 10.25.21.1 -needed by DS
+
+  xTaskCreatePinnedToCore(  // create task to run WiFi recieving
+    WiFiTaskFunction,   /* Function to implement the task */
+    "WiFiTask",  /* Name of the task */
+    15000,       /* Stack size in words */
+    NULL,        /* Task input parameter */
+    1,           /* Priority of the task */
+    NULL,        /* Task handle. */
+    0            /* Core on which task should run */
+  );
 }
 
 boolean readBoolFromBuffer(byte &pos) {  // return boolean at pos position in recvdData

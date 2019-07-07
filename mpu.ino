@@ -1,5 +1,3 @@
-#include "mpu.h"
-
 // start I2C communication and send commands to set up the MPU6050.
 // A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
 // and then sending a new register value

@@ -1,7 +1,11 @@
+#include "ursa.h"
 #include "mpu.h"
 #include "stepper.h"
 #include "wifi.h"
-#include "ursa.h"
+
+PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
+PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, DIRECT);  // setup the Speed PID loop
+
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -102,7 +106,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
   wasRobotEnabled = robotEnabled;
 }
 
-void createDataToSend() {
+byte createDataToSend() {
   byte counter = 0;
 
   addBoolToBuffer(robotEnabled, counter);

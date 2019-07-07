@@ -1,5 +1,3 @@
-#include "stepper.h"
-
 void IRAM_ATTR onLeftStepTimer() {  // Interrupt function called by timer
   if ((leftMotorSpeed >= 0) != leftForwardBl) {  // if direction has changed
     if (leftMotorSpeed >= 0) {

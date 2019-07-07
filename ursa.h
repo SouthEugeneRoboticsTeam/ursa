@@ -1,5 +1,6 @@
 #ifndef ursa_h
 #define ursa_h
+#include "Arduino.h"
 #include <PID_v1.h>
 
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
@@ -38,7 +39,5 @@ int turnSpeedVal = 0;  // (positive=turn right, negative=turn left)
 
 double kP_angle, kI_angle, kD_angle = 0.0000;  // PID gains for the Angle control loop
 double kP_speed, kI_speed, kD_speed = 0.0000;  // PID gains for the Speed control loop
-PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, DIRECT);  // setup the Speed PID loop
 
 #endif
