@@ -9,7 +9,7 @@
 #define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 1000    // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
-int MAX_SPEED = 4000; // max speed (in steps/sec) that the motors can run at
+int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
@@ -19,12 +19,16 @@ float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover f
 #define LEFT_DIR_PIN GPIO_NUM_33
 #define RIGHT_STEP_PIN GPIO_NUM_34
 #define RIGHT_DIR_PIN GPIO_NUM_35
-#define ENS_PIN GPIO_NUM_23 // pin wired to both motor driver chips' ENable pins, to turn on and off motors
+#define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 #define LED_BUILTIN 2
+
+#define movementThreshold 34
+#define movementMeasurements 15
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
 byte numBytesToSend = 0;
+
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
 const char *robotPass = "sert2521";
@@ -147,7 +151,8 @@ void setup() {
     NULL,        /* Task input parameter */
     1,           /* Priority of the task */
     NULL,        /* Task handle. */
-    0);  /* Core where the task should run */
+    0            /* Core on which task should run */
+  );
 
   leftStepTimer = timerBegin(2, 80, true);  // 80Mhz / 80  = 1Mhz, 1microsecond
   rightStepTimer = timerBegin(3, 80, true);  // 80Mhz / 80  = 1Mhz, 1microsecond
@@ -158,6 +163,7 @@ void setup() {
 
   digitalWrite(LED_BUILTIN, LOW);
 }
+
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
 
@@ -169,19 +175,23 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       xSemaphoreGive(mutexReceive);
     }
   }
+
   robotEnabled = enable;
+
   if (abs(pitch) > MAX_TIP) {
     tipped = true;
     robotEnabled = false;
   } else {
     tipped = false;
   }
+
   if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
     robotEnabled = false;
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
     digitalWrite(LED_BUILTIN, HIGH);
+
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       // TODO: turn on stepper motors
       PIDA.SetMode(AUTOMATIC);  // turn on the PID
@@ -234,9 +244,11 @@ int createDataToSend() {
   addIntToBuffer(rightMotorSpeed, counter);
   addFloatToBuffer(targetPitch, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
+
   for (int i = 0; i < numSendAux; i++) {
     addByteToBuffer(auxSendArray[i], counter);  // extra data
   }
+
   return counter;
 }
 
@@ -246,9 +258,11 @@ void parseDataReceived() {  // put parse functions here
   speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED, MAX_SPEED);  // 0=back, 100/8=stop, 200=forwards
   turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 200=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
+
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);
   }
+
   if (readBoolFromBuffer(counter)) {
     kP_angle = readFloatFromBuffer(counter);
     kI_angle = readFloatFromBuffer(counter);
@@ -299,26 +313,33 @@ void WiFiTaskFunction(void * pvParameters) {
   while (true) {  // infinite loop
     // wifi recieve code:
     int packetSize = Udp.parsePacket();
+
     if (packetSize) {
       if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
         receivedNewData = true;
         lastMessageTimeMillis = millis();
         char packetBuffer[maxWifiRecvBufSize];
+
         Udp.read(packetBuffer, maxWifiRecvBufSize);
         for (int i = 0; i < maxWifiRecvBufSize; i++) {
           recvdData[i] = (byte)((int)(256 + packetBuffer[i]) % 256);
         }
+
         Udp.beginPacket();
         for (int i = 0; i < numBytesToSend; i++) {  // send response, maybe change to go less frequently
           Udp.write(dataToSend[i]);
         }
+
         Udp.endPacket();
+
         xSemaphoreGive(mutexReceive);
       }
     }
+
     vTaskDelay(10);  // allow idle task to run so task watchdog timer isn't triggered
   }
 }
+
 // start I2C communication and send commands to set up the MPU6050.
 // A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
 // and then sending a new register value
@@ -358,16 +379,16 @@ void readMPU6050() {
   rotationDPS_X = (rotationX - rotationOffsetX) * 1000.00 / 32766;  // zero gyro with offset values recorded on startup and convert to degrees per second
   rotationDPS_Y = (rotationY - rotationOffsetY) * 1000.00 / 32766;
   rotationDPS_Z = (rotationZ - rotationOffsetZ) * 1000.00 / 32766;
+
   if (micros() < lastCalcedMPU6050) {  // try to handle micros' long overflow in a harmless way
     lastCalcedMPU6050 = micros() - 10000;
   }
+
   pitch = COMPLEMENTARY_FILTER_CONSTANT * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + (1 - COMPLEMENTARY_FILTER_CONSTANT) * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset);  // complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
   lastCalcedMPU6050 = micros();  // record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
 
 void zeroMPU6050() {  // find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
-#define movementThreshold 34
-#define movementMeasurements 15
   do {
     Wire.beginTransmission(0x68);
     Wire.write(0x3B);
@@ -383,6 +404,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
     rotationOffsetX = 0;
     rotationOffsetY = 0;
     rotationOffsetZ = 0;
+
     for (int i = 0; i < movementMeasurements; i++) {
       Wire.beginTransmission(0x68);
       Wire.write(0x3B);
@@ -409,6 +431,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
   rotationOffsetX = 0;
   rotationOffsetY = 0;
   rotationOffsetZ = 0;
+
   for (int i = 0; i < 50; i++) {  // run the following code 50 times so we can get many measurements to average into an offset value
     Wire.beginTransmission(0x68);
     Wire.write(0x3B);
@@ -426,6 +449,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
     rotationOffsetZ += rotationZ;
     delay(10 + i / 5);  // add some time between reads, changing the delay each time a bit to be less likely to be thrown by a periodic oscillation
   }
+
   rotationOffsetX /= 50;  // devide by the number of reads that were taken to get an average value
   rotationOffsetY /= 50;
   rotationOffsetZ /= 50;
@@ -448,11 +472,13 @@ int readIntFromBuffer(byte &pos) {  // return int from four bytes starting at po
     byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
+
   for (int i = 0; i < 4; i++) {
     d.b[i] = recvdData[pos];
     pos++;
   }
-  return d.v; // return the int form of union d
+
+  return d.v;  // return the int form of union d
 }
 
 float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at pos position in recvdData
@@ -460,10 +486,12 @@ float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at
     byte b[4];
     float v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
+
   for (int i = 0; i < 4; i++) {
     d.b[i] = recvdData[pos];
     pos++;
   }
+
   return d.v;
 }
 
@@ -482,7 +510,9 @@ void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array
     byte b[4];
     int v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
+
   d.v = msg;  // put the value into the union as an int
+
   for (int i = 0; i < 4; i++) {
     dataToSend[pos] = d.b[i];
     pos++;
@@ -494,7 +524,9 @@ void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData 
     byte b[4];
     float v;
   } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
+
   d.v = msg;
+
   for (int i = 0; i < 4; i++) {
     dataToSend[pos] = d.b[i];
     pos++;
