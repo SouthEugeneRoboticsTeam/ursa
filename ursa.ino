@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <WiFiAP.h>
 #include <WiFiUdp.h>
+#include <EEPROM.h>
 
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
@@ -87,18 +88,19 @@ PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
+  Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
 
   mutexReceive = xSemaphoreCreateMutex();
-
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
-  Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
   //TODO: disable stepper motors
 
+  EEPROM.begin(64);//size in bytes
   setupStepperRMTs();
+  recallSettings();
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
@@ -224,4 +226,25 @@ void parseDataReceived() {  // put parse functions here
     kI_speed = readFloatFromBuffer(counter);
     kD_speed = readFloatFromBuffer(counter);
   }
+}
+
+void recallSettings() {
+  byte counter = 0;
+  kP_angle = recallFloatFromEeprom(counter);
+  kI_angle = recallFloatFromEeprom(counter);
+  kD_angle = recallFloatFromEeprom(counter);
+  kP_speed = recallFloatFromEeprom(counter);
+  kI_speed = recallFloatFromEeprom(counter);
+  kD_speed = recallFloatFromEeprom(counter);
+}
+
+void saveSettings() {
+  byte counter = 0;
+  saveFloatToEeprom(kP_angle, counter);
+  saveFloatToEeprom(kI_angle, counter);
+  saveFloatToEeprom(kD_angle, counter);
+  saveFloatToEeprom(kP_speed, counter);
+  saveFloatToEeprom(kI_speed, counter);
+  saveFloatToEeprom(kD_speed, counter);
+  EEPROM.commit();
 }
