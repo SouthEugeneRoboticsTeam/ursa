@@ -87,6 +87,7 @@ PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
+  pinMode(ENS_PIN, OUTPUT);
 
   mutexReceive = xSemaphoreCreateMutex();
 
@@ -147,12 +148,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       // TODO: turn on stepper motors (complete?)
-      void setupMotors() { // function turns on stepper motors using an enable PIN on the drivers
-      pinMode(ENS_PIN GPIO_NUM_23, OUTPUT) // sets this PIN as an output
-      }
-      void loop() {
-      digitalWrite(ENS_PIN GPIO_NUM_23, HIGH) // loop in place to make sure PIN stays enabled (not sure if necessary)
-      }
+      digitalWrite(ENS_PIN, LOW); // enables stepper motors
       PIDA.SetMode(AUTOMATIC);  // turn on the PID
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
@@ -185,12 +181,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
     // TODO: turn off stepper motors (complete?)
-    void turnOffMotors (){
-    pinMode(ENS_PIN GPIO_NUM_23, OUTPUT) // making sure that this is still recognized as an output (not sure if necessary)
-    }
-    void loop() {
-    digitalWrite(ENS_PIN GPIO_NUM_23, LOW) // same with the turning on - making sure the steppers remain disabled
-    }
+    digitalWrite(ENS_PIN, HIGH); // disables stepper motors
   }
 
   wasRobotEnabled = robotEnabled;
