@@ -98,7 +98,7 @@ void setup() {
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
   //TODO: disable stepper motors
-  
+
   EEPROM.begin(64);//size in bytes
   setupStepperRMTs();
   recallSettings();
@@ -204,7 +204,7 @@ byte createDataToSend() {
   for (int i = 0; i < numSendAux; i++) {
     addByteToBuffer(auxSendArray[i], counter);  // extra data
   }
-  Serial.println(saverecallState);
+
   if (saverecallState == 1) {
     recallSettings();
     addBoolToBuffer(true, counter);

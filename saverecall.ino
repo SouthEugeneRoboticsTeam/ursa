@@ -1,9 +1,7 @@
 void recallSettings() {
   byte counter = 0;
-  Serial.println("RECALLING");
   kP_angle = EEPROMreadFloat(counter);
   kI_angle = EEPROMreadFloat(counter);
-  Serial.println(kI_angle);
   kD_angle = EEPROMreadFloat(counter);
   kP_speed = EEPROMreadFloat(counter);
   kI_speed = EEPROMreadFloat(counter);
@@ -12,20 +10,13 @@ void recallSettings() {
 
 void saveSettings() {
   byte counter = 0;
-  Serial.println("SAVING");
   EEPROMwriteFloat(kP_angle, counter);
   EEPROMwriteFloat(kI_angle, counter);
-  Serial.println(kI_angle);
   EEPROMwriteFloat(kD_angle, counter);
   EEPROMwriteFloat(kP_speed, counter);
   EEPROMwriteFloat(kI_speed, counter);
   EEPROMwriteFloat(kD_speed, counter);
   EEPROM.commit();
-  for (int i = 0; i < 63; i++) {
-    Serial.print(EEPROM.read(i));
-    Serial.print(",");
-  }
-  Serial.println();
 }
 
 boolean EEPROMreadBoolean(byte &pos) {
