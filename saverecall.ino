@@ -1,16 +1,46 @@
-boolean recallBoolFromEeprom(byte &pos) {
+void recallSettings() {
+  byte counter = 0;
+  Serial.println("RECALLING");
+  kP_angle = EEPROMreadFloat(counter);
+  kI_angle = EEPROMreadFloat(counter);
+  Serial.println(kI_angle);
+  kD_angle = EEPROMreadFloat(counter);
+  kP_speed = EEPROMreadFloat(counter);
+  kI_speed = EEPROMreadFloat(counter);
+  kD_speed = EEPROMreadFloat(counter);
+}
+
+void saveSettings() {
+  byte counter = 0;
+  Serial.println("SAVING");
+  EEPROMwriteFloat(kP_angle, counter);
+  EEPROMwriteFloat(kI_angle, counter);
+  Serial.println(kI_angle);
+  EEPROMwriteFloat(kD_angle, counter);
+  EEPROMwriteFloat(kP_speed, counter);
+  EEPROMwriteFloat(kI_speed, counter);
+  EEPROMwriteFloat(kD_speed, counter);
+  EEPROM.commit();
+  for (int i = 0; i < 63; i++) {
+    Serial.print(EEPROM.read(i));
+    Serial.print(",");
+  }
+  Serial.println();
+}
+
+boolean EEPROMreadBoolean(byte &pos) {
   byte msg = byte(EEPROM.read(pos));
   pos++;
   return (msg == 1);
 }
 
-byte recallByteFromEeprom(byte &pos) {
+byte EEPROMreadByte(byte &pos) {
   byte msg = byte(EEPROM.read(pos));
   pos++;
   return msg;
 }
 
-int recallIntFromEeprom(byte &pos) {
+int EEPROMreadInt(byte &pos) {
   union {
     byte b[4];
     int v;
@@ -24,7 +54,7 @@ int recallIntFromEeprom(byte &pos) {
   return d.v;
 }
 
-float recallFloatFromEeprom(byte &pos) {
+float EEPROMreadFloat(byte &pos) {
   union {
     byte b[4];
     float v;
@@ -38,17 +68,17 @@ float recallFloatFromEeprom(byte &pos) {
   return d.v;
 }
 
-void saveBoolToEeprom(boolean msg, byte &pos) {
+void EEPROMwriteBool(boolean msg, byte &pos) {
   EEPROM.write(pos, msg);
   pos++;
 }
 
-void saveByteToEeprom(byte msg, byte &pos) {
+void EEPROMwriteByte(byte msg, byte &pos) {
   EEPROM.write(pos, msg);
   pos++;
 }
 
-void saveIntToEeprom(int msg, byte &pos) {
+void EEPROMwriteInt(int msg, byte &pos) {
   union {
     byte b[4];
     int v;
@@ -57,12 +87,12 @@ void saveIntToEeprom(int msg, byte &pos) {
   d.v = msg;
 
   for (int i = 0; i < 4; i++) {
-    dataToSend[pos] = d.b[i];
+    EEPROM.write(pos, d.b[i]);
     pos++;
   }
 }
 
-void saveFloatToEeprom(float msg, byte &pos) {
+void EEPROMwriteFloat(float msg, byte &pos) {
   union {
     byte b[4];
     float v;
@@ -71,7 +101,7 @@ void saveFloatToEeprom(float msg, byte &pos) {
   d.v = msg;
 
   for (int i = 0; i < 4; i++) {
-    dataToSend[pos] = d.b[i];
+    EEPROM.write(pos, d.b[i]);
     pos++;
   }
 }

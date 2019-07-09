@@ -82,7 +82,7 @@ void zeroMPU6050() {  // find how much offset each gyro axis has to zero out dri
       lastrotationY = rotationY;
       lastrotationZ = rotationZ;
       digitalWrite(LED_BUILTIN, i % 2);
-      delay(25);
+      delay(15);
     }
   } while (abs(rotationOffsetX) > movementThreshold * movementMeasurements || abs(rotationOffsetY) > movementThreshold * movementMeasurements || abs(rotationOffsetZ) > movementThreshold * movementMeasurements);
 
