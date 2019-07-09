@@ -1,13 +1,13 @@
-#include "driver/rmt.h"
-#include <Wire.h>  // scl=22 sda=21
 #include <PID_v1.h>
+#include <Wire.h>  // scl=22 sda=21
+#include "driver/rmt.h"
 #include <WiFi.h>
 #include <WiFiAP.h>
 #include <WiFiUdp.h>
 
-#define ROBOT_ID 0      // unique robot ID, sent to DS, and used to name wifi network
-#define MODEL_NO 0      // unique configuration of robot which can be used to identify additional features
-#define WiFiLossDisableIntervalMillis 1000    // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
+#define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
+#define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
+#define WiFiLossDisableIntervalMillis 100  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
@@ -27,30 +27,8 @@ float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover f
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
-byte numBytesToSend = 0;
-
-// Define the SSID and password for the robot's access point
-char robotSSID[12];  // defined in the setup method
-const char *robotPass = "sert2521";
-hw_timer_t *leftStepTimer = NULL;
-hw_timer_t *rightStepTimer = NULL;
-
-rmt_config_t leftConfig;    // settings for RMT pulse for stepper motor
-rmt_item32_t leftItems[1];  // holds definition of pulse for stepper motor
-rmt_config_t rightConfig;
-rmt_item32_t rightItems[1];
-
-WiFiUDP Udp;
 
 byte voltage = 0;  // 0v=0 13v=255
-volatile byte recvdData[maxWifiRecvBufSize] = {0};  // array to hold data recieved from DS.
-volatile boolean receivedNewData = false;  // set true when data gotten, set false when parsed
-volatile byte dataToSend[maxWifiSendBufSize] = {0};  // array to hold data to send to DS.
-byte numAuxRecv = 0;  // how many bytes of control data for extra things
-byte auxRecvArray[12] = {0};  // size of numAuxRecv
-byte numSendAux = 0;  // how many bytes of sensor data to send
-byte auxSendArray[12] = {0};  // size of numAuxSend
-unsigned long lastMessageTimeMillis = 0;
 
 // since multiple tasks are running at once, we don't want two tasks to try and use one array at the same time.
 SemaphoreHandle_t mutexReceive;  // used to check whether receiving tasks can safely change shared variables
@@ -60,60 +38,51 @@ boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
 boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
 
-int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ = 0;
-int32_t rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
-unsigned long lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
-double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;  // rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
-double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
-
-float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
 double targetPitch = 0.000;  // what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
 volatile int leftMotorSpeed = 0;  // stepper ticks per second that the left motor is currently doing "volatile" because used in an interrupt
 volatile int rightMotorSpeed = 0;
-volatile boolean rightForwardBl = false;  // was the motor moving forwards last time the interrupt was called
-volatile boolean leftForwardBl = false;
 double motorSpeedVal = 0;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
 double speedVal = 0;  // how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;  // (positive=turn right, negative=turn left)
 
 double kP_angle, kI_angle, kD_angle = 0.0000;  // PID gains for the Angle control loop
 double kP_speed, kI_speed, kD_speed = 0.0000;  // PID gains for the Speed control loop
+
+int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ = 0;
+int32_t rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
+unsigned long lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
+double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;  // rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
+double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
+float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
+
+hw_timer_t *leftStepTimer = NULL;
+hw_timer_t *rightStepTimer = NULL;
+
+rmt_config_t leftConfig;    // settings for RMT pulse for stepper motor
+rmt_item32_t leftItems[1];  // holds definition of pulse for stepper motor
+rmt_config_t rightConfig;
+rmt_item32_t rightItems[1];
+
+volatile boolean rightForwardBl = false;  // was the motor moving forwards last time the interrupt was called
+volatile boolean leftForwardBl = false;
+
+byte numBytesToSend = 0;
+// Define the SSID and password for the robot's access point
+char robotSSID[12];  // defined in the setup method
+const char *robotPass = "sert2521";
+volatile byte recvdData[maxWifiRecvBufSize] = {0};  // array to hold data recieved from DS.
+volatile boolean receivedNewData = false;  // set true when data gotten, set false when parsed
+volatile byte dataToSend[maxWifiSendBufSize] = {0};  // array to hold data to send to DS.
+byte numAuxRecv = 0;  // how many bytes of control data for extra things
+byte auxRecvArray[12] = {0};  // size of numAuxRecv
+byte numSendAux = 0;  // how many bytes of sensor data to send
+byte auxSendArray[12] = {0};  // size of numAuxSend
+unsigned long lastMessageTimeMillis = 0;
+
+WiFiUDP Udp;
+
 PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
 PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, DIRECT);  // setup the Speed PID loop
-
-void IRAM_ATTR onLeftStepTimer() {  // Interrupt function called by timer
-  if ((leftMotorSpeed >= 0) != leftForwardBl) {  // if direction has changed
-    if (leftMotorSpeed >= 0) {
-      digitalWrite(LEFT_DIR_PIN, HIGH);
-    } else {
-      digitalWrite(LEFT_DIR_PIN, LOW);
-    }
-
-    leftForwardBl = (leftMotorSpeed >= 0);  // save direction for next time
-
-    // delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
-    NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
-  }
-
-  rmt_write_items(leftConfig.channel, leftItems, 1, 0);  // start pulse
-}
-
-void IRAM_ATTR onRightStepTimer() {  // Interrupt function called by timer
-  if ((rightMotorSpeed >= 0) != rightForwardBl) {  // if direction has changed
-    if (rightMotorSpeed >= 0) {
-      digitalWrite(RIGHT_DIR_PIN, HIGH);
-    } else {
-      digitalWrite(RIGHT_DIR_PIN, LOW);
-    }
-
-    rightForwardBl = (rightMotorSpeed >= 0);  // save direction for next time
-
-    // delay for 72 clock cycles which at 240MHZ should be 300 nanoseconds. this much time is required by the driver chip between any direction change and a step command
-    NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
-  }
-
-  rmt_write_items(rightConfig.channel, rightItems, 1, 0);  // start pulse
-}
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -127,6 +96,8 @@ void setup() {
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
+  //TODO: disable stepper motors
+
   setupStepperRMTs();
 
   PIDA.SetMode(MANUAL);  // PID loop off
@@ -139,27 +110,9 @@ void setup() {
   setupMPU6050();  // this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
   zeroMPU6050();  // this function averages some gyro readings so later the readings can be calibrated to zero. This function counts on the robot being still, so the robot needs to be powered on while lying on the ground
 
-  WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(robotSSID, robotPass);  // start wifi network, code may need to be added after this to wait for it to start
-  IPAddress myIP = WiFi.softAPIP();
-  Udp.begin(2521);  // port 2521 on 10.25.21.1 -needed by DS
+  setupWifi();
 
-  xTaskCreatePinnedToCore(  // create task to run WiFi recieving
-    WiFiTaskFunction,   /* Function to implement the task */
-    "WiFiTask",  /* Name of the task */
-    10000,       /* Stack size in words */
-    NULL,        /* Task input parameter */
-    1,           /* Priority of the task */
-    NULL,        /* Task handle. */
-    0            /* Core on which task should run */
-  );
-
-  leftStepTimer = timerBegin(2, 80, true);  // 80Mhz / 80  = 1Mhz, 1microsecond
-  rightStepTimer = timerBegin(3, 80, true);  // 80Mhz / 80  = 1Mhz, 1microsecond
-  timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
-  timerAttachInterrupt(rightStepTimer, &onRightStepTimer, true);
-  timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate // practically never
-  timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
+  setupStepperTimers();
 
   digitalWrite(LED_BUILTIN, LOW);
 }
@@ -231,7 +184,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
   wasRobotEnabled = robotEnabled;
 }
 
-int createDataToSend() {
+byte createDataToSend() {
   byte counter = 0;
 
   addBoolToBuffer(robotEnabled, counter);
@@ -270,265 +223,5 @@ void parseDataReceived() {  // put parse functions here
     kP_speed = readFloatFromBuffer(counter);
     kI_speed = readFloatFromBuffer(counter);
     kD_speed = readFloatFromBuffer(counter);
-  }
-}
-
-void setupStepperRMTs() {
-  leftConfig.rmt_mode = RMT_MODE_TX;
-  leftConfig.channel = RMT_CHANNEL_0;
-  leftConfig.gpio_num = LEFT_STEP_PIN;
-  leftConfig.mem_block_num = 1;
-  leftConfig.tx_config.loop_en = 0;
-  leftConfig.tx_config.carrier_en = 0;
-  leftConfig.tx_config.idle_output_en = 1;
-  leftConfig.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-  leftConfig.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
-  leftConfig.clk_div = 80;  // 80MHx / 80 = 1MHz 0r 1uS per count
-  rmt_config(&leftConfig);
-  rmt_driver_install(leftConfig.channel, 0, 0);  // rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
-  leftItems[0].duration0 = 2;
-  leftItems[0].level0 = 1;
-  leftItems[0].duration1 = 0;
-  leftItems[0].level1 = 0;
-
-  rightConfig.rmt_mode = RMT_MODE_TX;
-  rightConfig.channel = RMT_CHANNEL_1;
-  rightConfig.gpio_num = RIGHT_STEP_PIN;
-  rightConfig.mem_block_num = 1;
-  rightConfig.tx_config.loop_en = 0;
-  rightConfig.tx_config.carrier_en = 0;
-  rightConfig.tx_config.idle_output_en = 1;
-  rightConfig.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-  rightConfig.tx_config.carrier_level = RMT_CARRIER_LEVEL_HIGH;
-  rightConfig.clk_div = 80;  // 80MHx / 80 = 1MHz 0r 1uS per count
-  rmt_config(&rightConfig);
-  rmt_driver_install(rightConfig.channel, 0, 1);  // rmt_driver_install(rmt_channel_t channel, size_t rx_buf_size, int rmt_intr_num)
-  rightItems[0].duration0 = 2;
-  rightItems[0].level0 = 1;
-  rightItems[0].duration1 = 0;
-  rightItems[0].level1 = 0;
-}
-
-void WiFiTaskFunction(void * pvParameters) {
-  while (true) {  // infinite loop
-    // wifi recieve code:
-    int packetSize = Udp.parsePacket();
-
-    if (packetSize) {
-      if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
-        receivedNewData = true;
-        lastMessageTimeMillis = millis();
-        char packetBuffer[maxWifiRecvBufSize];
-
-        Udp.read(packetBuffer, maxWifiRecvBufSize);
-        for (int i = 0; i < maxWifiRecvBufSize; i++) {
-          recvdData[i] = (byte)((int)(256 + packetBuffer[i]) % 256);
-        }
-
-        Udp.beginPacket();
-        for (int i = 0; i < numBytesToSend; i++) {  // send response, maybe change to go less frequently
-          Udp.write(dataToSend[i]);
-        }
-
-        Udp.endPacket();
-
-        xSemaphoreGive(mutexReceive);
-      }
-    }
-
-    vTaskDelay(10);  // allow idle task to run so task watchdog timer isn't triggered
-  }
-}
-
-// start I2C communication and send commands to set up the MPU6050.
-// A command is set by starting a transmission, writing a byte (written here in hexadecimal) to signal what register should be changed,
-// and then sending a new register value
-void setupMPU6050() {
-  Wire.begin();  // setup mpu6050. reference for the mpu6050's registers https://www.invensense.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
-  Wire.setClock(400000L);  // send data at a faster clock speed
-  Wire.beginTransmission(0x68);
-  Wire.write(0x6B);
-  Wire.write(0);  // wakeup
-  Wire.endTransmission(true);
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1B);
-  Wire.write(0x10);  // gyro range //18=2000//10=1000
-  Wire.endTransmission(true);
-  Wire.beginTransmission(0x68);
-  Wire.write(0x19);
-  Wire.write(0x02);  // clock divider
-  Wire.endTransmission(true);
-  Wire.beginTransmission(0x68);
-  Wire.write(0x1A);
-  Wire.write(0x00);  // buffering
-  Wire.endTransmission(true);  // end setup mpu6050
-}
-
-void readMPU6050() {
-  Wire.beginTransmission(0x68);
-  Wire.write(0x3B);  // location of first byte of data
-  Wire.endTransmission(false);
-  Wire.requestFrom(0x68, 14, true);  // ask for accel and gyro data bytes
-  accelerationX = Wire.read() << 8 | Wire.read();  // read two bytes and put them together into a sixteen bit integer value
-  accelerationY = Wire.read() << 8 | Wire.read();
-  accelerationZ = Wire.read() << 8 | Wire.read();
-  Wire.read(); Wire.read();  // throw away temperature, it's annoying they put it in the middle here
-  rotationX = Wire.read() << 8 | Wire.read();
-  rotationY = Wire.read() << 8 | Wire.read();
-  rotationZ = Wire.read() << 8 | Wire.read();
-  rotationDPS_X = (rotationX - rotationOffsetX) * 1000.00 / 32766;  // zero gyro with offset values recorded on startup and convert to degrees per second
-  rotationDPS_Y = (rotationY - rotationOffsetY) * 1000.00 / 32766;
-  rotationDPS_Z = (rotationZ - rotationOffsetZ) * 1000.00 / 32766;
-
-  if (micros() < lastCalcedMPU6050) {  // try to handle micros' long overflow in a harmless way
-    lastCalcedMPU6050 = micros() - 10000;
-  }
-
-  pitch = COMPLEMENTARY_FILTER_CONSTANT * ((pitch - pitchOffset) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + (1 - COMPLEMENTARY_FILTER_CONSTANT) * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset);  // complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
-  lastCalcedMPU6050 = micros();  // record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
-}
-
-void zeroMPU6050() {  // find how much offset each gyro axis has to zero out drift. should be run on startup (when robot is still)
-  do {
-    Wire.beginTransmission(0x68);
-    Wire.write(0x3B);
-    Wire.endTransmission(false);
-    Wire.requestFrom(0x68, 14, true);
-    accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
-    accelerationY = Wire.read() << 8 | Wire.read();
-    accelerationZ = Wire.read() << 8 | Wire.read();
-    Wire.read(); Wire.read();  // throw away temperature
-    int16_t lastrotationX = Wire.read() << 8 | Wire.read();
-    int16_t lastrotationY = Wire.read() << 8 | Wire.read();
-    int16_t lastrotationZ = Wire.read() << 8 | Wire.read();
-    rotationOffsetX = 0;
-    rotationOffsetY = 0;
-    rotationOffsetZ = 0;
-
-    for (int i = 0; i < movementMeasurements; i++) {
-      Wire.beginTransmission(0x68);
-      Wire.write(0x3B);
-      Wire.endTransmission(false);
-      Wire.requestFrom(0x68, 14, true);
-      accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
-      accelerationY = Wire.read() << 8 | Wire.read();
-      accelerationZ = Wire.read() << 8 | Wire.read();
-      Wire.read(); Wire.read();  // throw away temperature
-      rotationX = Wire.read() << 8 | Wire.read();
-      rotationY = Wire.read() << 8 | Wire.read();
-      rotationZ = Wire.read() << 8 | Wire.read();
-      rotationOffsetX += abs(rotationX - lastrotationX);
-      rotationOffsetY += abs(rotationY - lastrotationY);
-      rotationOffsetZ += abs(rotationZ - lastrotationZ);
-      lastrotationX = rotationX;
-      lastrotationY = rotationY;
-      lastrotationZ = rotationZ;
-      digitalWrite(LED_BUILTIN, i % 2);
-      delay(25);
-    }
-  } while (abs(rotationOffsetX) > movementThreshold * movementMeasurements || abs(rotationOffsetY) > movementThreshold * movementMeasurements || abs(rotationOffsetZ) > movementThreshold * movementMeasurements);
-
-  rotationOffsetX = 0;
-  rotationOffsetY = 0;
-  rotationOffsetZ = 0;
-
-  for (int i = 0; i < 50; i++) {  // run the following code 50 times so we can get many measurements to average into an offset value
-    Wire.beginTransmission(0x68);
-    Wire.write(0x3B);
-    Wire.endTransmission(false);
-    Wire.requestFrom(0x68, 14, true);
-    accelerationX = Wire.read() << 8 | Wire.read();  // same reading code as earlier
-    accelerationY = Wire.read() << 8 | Wire.read();
-    accelerationZ = Wire.read() << 8 | Wire.read();
-    Wire.read(); Wire.read();  // throw away temperature
-    rotationX = Wire.read() << 8 | Wire.read();
-    rotationY = Wire.read() << 8 | Wire.read();
-    rotationZ = Wire.read() << 8 | Wire.read();
-    rotationOffsetX += rotationX;  // add all the reads together
-    rotationOffsetY += rotationY;
-    rotationOffsetZ += rotationZ;
-    delay(10 + i / 5);  // add some time between reads, changing the delay each time a bit to be less likely to be thrown by a periodic oscillation
-  }
-
-  rotationOffsetX /= 50;  // devide by the number of reads that were taken to get an average value
-  rotationOffsetY /= 50;
-  rotationOffsetZ /= 50;
-}
-
-boolean readBoolFromBuffer(byte &pos) {  // return boolean at pos position in recvdData
-  byte msg = recvdData[pos];
-  pos++;  // increment the counter for the next value
-  return (msg == 1);
-}
-
-byte readByteFromBuffer(byte &pos) {  // return byte at pos position in recvdData
-  byte msg = recvdData[pos];
-  pos++;  // increment the counter for the next value
-  return msg;
-}
-
-int readIntFromBuffer(byte &pos) {  // return int from four bytes starting at pos position in recvdData
-  union {  // this lets us translate between two variable types (equal size, but one's four bytes in an array, and one's a four byte int)  Reference for unions: https:// www.mcgurrin.info/robots/127/
-    byte b[4];
-    int v;
-  } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
-
-  for (int i = 0; i < 4; i++) {
-    d.b[i] = recvdData[pos];
-    pos++;
-  }
-
-  return d.v;  // return the int form of union d
-}
-
-float readFloatFromBuffer(byte &pos) {  // return float from 4 bytes starting at pos position in recvdData
-  union {  // this lets us translate between two variable types (equal size, but one's 4 bytes in an array, and one's a 4 byte float) Reference for unions: https:// www.mcgurrin.info/robots/127/
-    byte b[4];
-    float v;
-  } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
-
-  for (int i = 0; i < 4; i++) {
-    d.b[i] = recvdData[pos];
-    pos++;
-  }
-
-  return d.v;
-}
-
-void addBoolToBuffer(boolean msg, byte &pos) {  // add a boolean to the tosendData array
-  dataToSend[pos] = msg;
-  pos++;
-}
-
-void addByteToBuffer(byte msg, byte &pos) {  // add a byte to the tosendData array
-  dataToSend[pos] = msg;
-  pos++;
-}
-
-void addIntToBuffer(int msg, byte &pos) {  // add an int to the tosendData array (four bytes)
-  union {
-    byte b[4];
-    int v;
-  } d;  // d is the union, d.b acceses the byte array, d.v acceses the int
-
-  d.v = msg;  // put the value into the union as an int
-
-  for (int i = 0; i < 4; i++) {
-    dataToSend[pos] = d.b[i];
-    pos++;
-  }
-}
-
-void addFloatToBuffer(float msg, byte &pos) {  // add a float to the tosendData array (four bytes)
-  union {  // this lets us translate between two variables (equal size, but one's 4 bytes in an array, and one's a 4 byte float Reference for unions: https:// www.mcgurrin.info/robots/127/
-    byte b[4];
-    float v;
-  } d;  // d is the union, d.b acceses the byte array, d.v acceses the float
-
-  d.v = msg;
-
-  for (int i = 0; i < 4; i++) {
-    dataToSend[pos] = d.b[i];
-    pos++;
   }
 }
