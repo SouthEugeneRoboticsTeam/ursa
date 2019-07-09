@@ -98,6 +98,7 @@ void setup() {
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
   //TODO: disable stepper motors
+  
   EEPROM.begin(64);//size in bytes
   setupStepperRMTs();
   recallSettings();
