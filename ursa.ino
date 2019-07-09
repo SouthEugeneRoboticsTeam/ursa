@@ -24,7 +24,7 @@ float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover f
 #define LED_BUILTIN 2
 
 #define movementThreshold 25
-#define movementMeasurements 1//5
+#define movementMeasurements 15
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
