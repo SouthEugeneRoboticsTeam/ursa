@@ -99,8 +99,9 @@ void setup() {
   //TODO: disable stepper motors
 
   EEPROM.begin(64);//size in bytes
-  setupStepperRMTs();
   recallSettings();
+  
+  setupStepperRMTs();
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
@@ -226,25 +227,4 @@ void parseDataReceived() {  // put parse functions here
     kI_speed = readFloatFromBuffer(counter);
     kD_speed = readFloatFromBuffer(counter);
   }
-}
-
-void recallSettings() {
-  byte counter = 0;
-  kP_angle = recallFloatFromEeprom(counter);
-  kI_angle = recallFloatFromEeprom(counter);
-  kD_angle = recallFloatFromEeprom(counter);
-  kP_speed = recallFloatFromEeprom(counter);
-  kI_speed = recallFloatFromEeprom(counter);
-  kD_speed = recallFloatFromEeprom(counter);
-}
-
-void saveSettings() {
-  byte counter = 0;
-  saveFloatToEeprom(kP_angle, counter);
-  saveFloatToEeprom(kI_angle, counter);
-  saveFloatToEeprom(kD_angle, counter);
-  saveFloatToEeprom(kP_speed, counter);
-  saveFloatToEeprom(kI_speed, counter);
-  saveFloatToEeprom(kD_speed, counter);
-  EEPROM.commit();
 }

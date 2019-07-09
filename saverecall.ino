@@ -1,77 +1,30 @@
-boolean recallBoolFromEeprom(byte &pos) {
-  byte msg = byte(EEPROM.read(pos));
-  pos++;
-  return (msg == 1);
+void recallSettings() {
+  byte counter = 0;
+  kP_angle = EEPROM.readFloat(counter);
+  counter++;
+  kI_angle = EEPROM.readFloat(counter);
+  counter++;
+  kD_angle = EEPROM.readFloat(counter);
+  counter++;
+  kP_speed = EEPROM.readFloat(counter);
+  counter++;
+  kI_speed = EEPROM.readFloat(counter);
+  counter++;
+  kD_speed = EEPROM.readFloat(counter);
 }
 
-byte recallByteFromEeprom(byte &pos) {
-  byte msg = byte(EEPROM.read(pos));
-  pos++;
-  return msg;
-}
-
-int recallIntFromEeprom(byte &pos) {
-  union {
-    byte b[4];
-    int v;
-  } d;
-
-  for (int i = 0; i < 4; i++) {
-    d.b[i] = byte(EEPROM.read(pos));
-    pos++;
-  }
-
-  return d.v;
-}
-
-float recallFloatFromEeprom(byte &pos) {
-  union {
-    byte b[4];
-    float v;
-  } d;
-
-  for (int i = 0; i < 4; i++) {
-    d.b[i] = byte(EEPROM.read(pos));
-    pos++;
-  }
-
-  return d.v;
-}
-
-void saveBoolToEeprom(boolean msg, byte &pos) {
-  EEPROM.write(pos, msg);
-  pos++;
-}
-
-void saveByteToEeprom(byte msg, byte &pos) {
-  EEPROM.write(pos, msg);
-  pos++;
-}
-
-void saveIntToEeprom(int msg, byte &pos) {
-  union {
-    byte b[4];
-    int v;
-  } d;
-
-  d.v = msg;
-
-  for (int i = 0; i < 4; i++) {
-    dataToSend[pos] = d.b[i];
-    pos++;
-  }
-}
-
-void saveFloatToEeprom(float msg, byte &pos) {
-  union {
-    byte b[4];
-    float v;
-  } d;
-
-  d.v = msg;
-
-  for (int i = 0; i < 4; i++) {
-    dataToSend[pos] = d.b[i];
-    pos++;
-  }
+void saveSettings() {
+  byte counter = 0;
+  EEPROM.writeFloat(kP_angle, counter);
+  counter++;
+  EEPROM.writeFloat(kI_angle, counter);
+  counter++;
+  EEPROM.writeFloat(kD_angle, counter);
+  counter++;
+  EEPROM.writeFloat(kP_speed, counter);
+  counter++;
+  EEPROM.writeFloat(kI_speed, counter);
+  counter++;
+  EEPROM.writeFloat(kD_speed, counter);
+  EEPROM.commit();
 }
