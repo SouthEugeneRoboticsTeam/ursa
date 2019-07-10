@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <WiFiAP.h>
 #include <WiFiUdp.h>
+#include <EEPROM.h>
 
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
@@ -22,7 +23,7 @@ float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover f
 #define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 #define LED_BUILTIN 2
 
-#define movementThreshold 34
+#define movementThreshold 25
 #define movementMeasurements 15
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
@@ -78,6 +79,7 @@ byte auxRecvArray[12] = {0};  // size of numAuxRecv
 byte numSendAux = 0;  // how many bytes of sensor data to send
 byte auxSendArray[12] = {0};  // size of numAuxSend
 unsigned long lastMessageTimeMillis = 0;
+byte saverecallState = 1;  //0=don't send don't save  1=send  2=save
 
 WiFiUDP Udp;
 
@@ -88,18 +90,18 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   pinMode(ENS_PIN, OUTPUT);
+  Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
 
   mutexReceive = xSemaphoreCreateMutex();
-
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
-  Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
-  //TODO: disable stepper motors
 
+  EEPROM.begin(64);//size in bytes
   setupStepperRMTs();
+  recallSettings();
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
@@ -203,6 +205,19 @@ byte createDataToSend() {
     addByteToBuffer(auxSendArray[i], counter);  // extra data
   }
 
+  if (saverecallState == 1) {
+    recallSettings();
+    addBoolToBuffer(true, counter);
+    addFloatToBuffer(kP_angle, counter);
+    addFloatToBuffer(kI_angle, counter);
+    addFloatToBuffer(kD_angle, counter);
+    addFloatToBuffer(kP_speed, counter);
+    addFloatToBuffer(kI_speed, counter);
+    addFloatToBuffer(kD_speed, counter);
+  } else {
+    addBoolToBuffer(false, counter);
+  }
+
   return counter;
 }
 
@@ -224,5 +239,10 @@ void parseDataReceived() {  // put parse functions here
     kP_speed = readFloatFromBuffer(counter);
     kI_speed = readFloatFromBuffer(counter);
     kD_speed = readFloatFromBuffer(counter);
+  }
+
+  saverecallState = readByteFromBuffer(counter);
+  if (saverecallState == 2) {
+    saveSettings();
   }
 }
