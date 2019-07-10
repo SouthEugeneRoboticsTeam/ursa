@@ -89,6 +89,7 @@ PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
+  pinMode(ENS_PIN, OUTPUT);
   Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
 
   mutexReceive = xSemaphoreCreateMutex();
@@ -97,7 +98,6 @@ void setup() {
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
-  //TODO: disable stepper motors
 
   EEPROM.begin(64);//size in bytes
   setupStepperRMTs();
@@ -149,7 +149,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     digitalWrite(LED_BUILTIN, HIGH);
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
-      // TODO: turn on stepper motors
+      digitalWrite(ENS_PIN, LOW); // enables stepper motors
       PIDA.SetMode(AUTOMATIC);  // turn on the PID
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
@@ -181,7 +181,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
-    // TODO: turn off stepper motors
+    digitalWrite(ENS_PIN, HIGH); // disables stepper motors
   }
 
   wasRobotEnabled = robotEnabled;
