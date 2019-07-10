@@ -125,7 +125,7 @@ void setup() {
 
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
-  voltage = analogRead(VOLTAGE_PIN) / DACUnitsPerVolt;
+  voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
   if (receivedNewData) {
     if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
       parseDataReceived();
