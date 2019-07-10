@@ -9,6 +9,7 @@
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 100  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
+#define DACUnitsPerVolt 123.4  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
@@ -22,6 +23,7 @@ float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover f
 #define RIGHT_DIR_PIN GPIO_NUM_35
 #define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 #define LED_BUILTIN 2
+#define VOLTAGE_PIN GPIO_NUM_36  //ADC1 CH0
 
 #define movementThreshold 25
 #define movementMeasurements 15
@@ -90,6 +92,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   pinMode(ENS_PIN, OUTPUT);
+  pinMode(VOLTAGE_PIN, INPUT);
   Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
 
   mutexReceive = xSemaphoreCreateMutex();
@@ -122,7 +125,7 @@ void setup() {
 
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
-
+  voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
   if (receivedNewData) {
     if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
       parseDataReceived();
