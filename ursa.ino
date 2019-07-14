@@ -81,7 +81,7 @@ byte auxRecvArray[12] = {0};  // size of numAuxRecv
 byte numSendAux = 0;  // how many bytes of sensor data to send
 byte auxSendArray[12] = {0};  // size of numAuxSend
 unsigned long lastMessageTimeMillis = 0;
-byte saverecallState = 1;  //0=don't send don't save  1=send  2=save
+byte saverecallState = 0;  //0=don't send don't save  1=send  2=save
 
 WiFiUDP Udp;
 
@@ -92,19 +92,22 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   pinMode(ENS_PIN, OUTPUT);
+  digitalWrite(ENS_PIN, HIGH);
   pinMode(VOLTAGE_PIN, INPUT);
-  Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
-
-  mutexReceive = xSemaphoreCreateMutex();
-  sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
   pinMode(LEFT_STEP_PIN, OUTPUT);
   pinMode(RIGHT_STEP_PIN, OUTPUT);
   pinMode(LEFT_DIR_PIN, OUTPUT);
   pinMode(RIGHT_DIR_PIN, OUTPUT);
+  digitalWrite(LEFT_STEP_PIN, LOW);
+  digitalWrite(RIGHT_STEP_PIN, LOW);
+  digitalWrite(LEFT_DIR_PIN, LOW);
+  digitalWrite(RIGHT_DIR_PIN, LOW);
 
+  Serial.begin(115200);  // for debugging. Set the serial monitor to the same value or you will see nothing or gibberish.
+
+  mutexReceive = xSemaphoreCreateMutex();
+  sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
   EEPROM.begin(64);//size in bytes
-  setupStepperRMTs();
-  recallSettings();
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
@@ -113,8 +116,12 @@ void setup() {
   PIDA.SetOutputLimits(-MAX_TIP, MAX_TIP);
   PIDS.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
 
+  recallSettings();
+
+  setupStepperRMTs();
+
   setupMPU6050();  // this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
-  zeroMPU6050();  // this function averages some gyro readings so later the readings can be calibrated to zero. This function counts on the robot being still, so the robot needs to be powered on while lying on the ground
+  zeroMPU6050();  // this function averages some gyro readings so later the readings can be calibrated to zero. This function blocks until the robot is held stil, so the robot needs to be set flat on the ground on startup
 
   setupWifi();
 
