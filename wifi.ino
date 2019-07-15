@@ -31,9 +31,9 @@ void WiFiTaskFunction(void * pvParameters) {
 
 void setupWifi() {
   WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(robotSSID, robotPass);  // start wifi network, code may need to be added after this to wait for it to start
+  WiFi.softAP(robotSSID, robotPass, 4, 0, 1);//start wifi network, on channel 4, not hiding, and only allowing one client
   IPAddress myIP = WiFi.softAPIP();
-  Udp.begin(2521);  // port 2521 on 10.25.21.1 -needed by DS
+  Udp.begin(2521);  // port 2521 on 10.25.21.1
 
   xTaskCreatePinnedToCore(  // create task to run WiFi recieving
     WiFiTaskFunction,   /* Function to implement the task */

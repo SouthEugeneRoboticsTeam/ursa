@@ -13,6 +13,8 @@
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
+float DRIVE_SPEED_SCALER = .95;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
+float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -164,6 +166,8 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
 
+    PIDA.SetOutputLimits(-MAX_TIP, MAX_TIP);
+    PIDS.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDS.Compute();  // compute the PID, it changes the variables you set it up with earlier.
@@ -234,8 +238,8 @@ byte createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED, MAX_SPEED);  // 0=back, 100/8=stop, 200=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED / 50, MAX_SPEED / 50);  // 0=left, 200=right
+  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER); // 0=back, 100/8=stop, 200=forwards
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER); // 0=left, 200=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
 
   for (int i = 0; i < numAuxRecv; i++) {
