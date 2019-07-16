@@ -130,7 +130,7 @@ void setup() {
 
   setupStepperTimers();
 
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(LED_BUILTIN, HIGH);
 }
 
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
@@ -159,7 +159,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LED_BUILTIN,(millis()%1000<500));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       digitalWrite(ENS_PIN, LOW);  // enables stepper motors
@@ -189,7 +189,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
     }
   } else {  // disable
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LED_BUILTIN,(millis()%1000<500));
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
     timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
