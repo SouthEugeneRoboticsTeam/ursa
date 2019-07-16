@@ -130,7 +130,7 @@ void setup() {
 
   setupStepperTimers();
 
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
@@ -189,7 +189,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
     }
   } else {  // disable
-    digitalWrite(LED_BUILTIN,(millis()%1000<500));
+    digitalWrite(LED_BUILTIN, HIGH);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
     timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
