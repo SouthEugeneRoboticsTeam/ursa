@@ -13,8 +13,9 @@
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
-float DRIVE_SPEED_SCALER = .95;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
+float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
 float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
+float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -24,7 +25,7 @@ float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given dif
 #define RIGHT_STEP_PIN GPIO_NUM_34
 #define RIGHT_DIR_PIN GPIO_NUM_35
 #define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
-#define LED_BUILTIN 2
+#define LED_BUILTIN GPIO_NUM_2
 #define VOLTAGE_PIN GPIO_NUM_36  //ADC1 CH0
 
 #define movementThreshold 25
@@ -58,7 +59,6 @@ int32_t rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" valu
 unsigned long lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
 double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;  // rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
 double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
-float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not respond to perfectly balenced.
 
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
