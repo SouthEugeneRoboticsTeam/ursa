@@ -7,7 +7,6 @@ void WiFiTaskFunction(void * pvParameters) {
       if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
         receivedNewData = true;
         lastMessageTimeMillis = millis();
-        char packetBuffer[maxWifiRecvBufSize];
 
         Udp.read(packetBuffer, maxWifiRecvBufSize);
         for (int i = 0; i < maxWifiRecvBufSize; i++) {
@@ -31,7 +30,7 @@ void WiFiTaskFunction(void * pvParameters) {
 
 void setupWifi() {
   WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(robotSSID, robotPass, 4, 0, 1);//start wifi network, on channel 4, not hiding, and only allowing one client
+  WiFi.softAP(robotSSID, robotPass, 4, 0, 1);  // start wifi network, on channel 4, not hiding, and only allowing one client
   IPAddress myIP = WiFi.softAPIP();
   Udp.begin(2521);  // port 2521 on 10.25.21.1
 

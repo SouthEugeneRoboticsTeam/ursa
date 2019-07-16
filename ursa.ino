@@ -26,7 +26,7 @@ float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that
 #define RIGHT_DIR_PIN GPIO_NUM_35
 #define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 #define LED_BUILTIN GPIO_NUM_2
-#define VOLTAGE_PIN GPIO_NUM_36  //ADC1 CH0
+#define VOLTAGE_PIN GPIO_NUM_36  // ADC1 CH0
 
 #define movementThreshold 25
 #define movementMeasurements 15
@@ -56,7 +56,7 @@ double kP_speed, kI_speed, kD_speed = 0.0000;  // PID gains for the Speed contro
 
 int16_t accelerationX, accelerationY, accelerationZ, rotationX, rotationY, rotationZ = 0;
 int32_t rotationOffsetX, rotationOffsetY, rotationOffsetZ = 0;  // "offset" values used to zero the MPU6050 gyro on startup
-unsigned long lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
+uint32_t lastCalcedMPU6050 = 0;  // micros() value of last orientation read. used to integrate gyro data to get rotation
 double rotationDPS_X, rotationDPS_Y, rotationDPS_Z = 0.000;  // rotation in Degrees Per Second around the X,Y, and Z axes, with x left right, y forwards and backwards and z up and down
 double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. negative=forwards, positive=back Pitch matters for self balancing.
 
@@ -78,12 +78,13 @@ const char *robotPass = "sert2521";
 volatile byte recvdData[maxWifiRecvBufSize] = {0};  // array to hold data recieved from DS.
 volatile boolean receivedNewData = false;  // set true when data gotten, set false when parsed
 volatile byte dataToSend[maxWifiSendBufSize] = {0};  // array to hold data to send to DS.
+char packetBuffer[maxWifiRecvBufSize];
 byte numAuxRecv = 0;  // how many bytes of control data for extra things
 byte auxRecvArray[12] = {0};  // size of numAuxRecv
 byte numSendAux = 0;  // how many bytes of sensor data to send
 byte auxSendArray[12] = {0};  // size of numAuxSend
-unsigned long lastMessageTimeMillis = 0;
-byte saverecallState = 0;  //0=don't send don't save  1=send  2=save
+uint32_t lastMessageTimeMillis = 0;
+byte saverecallState = 0;  // 0=don't send don't save  1=send  2=save
 
 WiFiUDP Udp;
 
@@ -109,7 +110,7 @@ void setup() {
 
   mutexReceive = xSemaphoreCreateMutex();
   sprintf(robotSSID, "SERT_URSA_%02d", ROBOT_ID);  // create unique network SSID
-  EEPROM.begin(64);//size in bytes
+  EEPROM.begin(64);  // size in bytes
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
@@ -161,7 +162,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     digitalWrite(LED_BUILTIN, HIGH);
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
-      digitalWrite(ENS_PIN, LOW); // enables stepper motors
+      digitalWrite(ENS_PIN, LOW);  // enables stepper motors
       PIDA.SetMode(AUTOMATIC);  // turn on the PID
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
@@ -195,7 +196,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
-    digitalWrite(ENS_PIN, HIGH); // disables stepper motors
+    digitalWrite(ENS_PIN, HIGH);  // disables stepper motors
   }
 
   wasRobotEnabled = robotEnabled;
