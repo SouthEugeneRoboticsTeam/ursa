@@ -116,8 +116,8 @@ void setup() {
   PIDS.SetMode(MANUAL);
   PIDA.SetSampleTime(1);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
   PIDS.SetSampleTime(1);
-  PIDA.SetOutputLimits(-MAX_TIP, MAX_TIP);
-  PIDS.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
+  PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
+  PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
   recallSettings();
 
