@@ -22,8 +22,8 @@ float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that
 // change the direction at which the motor is driven.
 #define LEFT_STEP_PIN GPIO_NUM_32
 #define LEFT_DIR_PIN GPIO_NUM_33
-#define RIGHT_STEP_PIN GPIO_NUM_34
-#define RIGHT_DIR_PIN GPIO_NUM_35
+#define RIGHT_STEP_PIN GPIO_NUM_25
+#define RIGHT_DIR_PIN GPIO_NUM_26
 #define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 #define LED_BUILTIN GPIO_NUM_2
 #define VOLTAGE_PIN GPIO_NUM_36  // ADC1 CH0
@@ -178,13 +178,13 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the right motor should go
 
     if (abs(leftMotorSpeed) >= 1) {
-      timerAlarmWrite(leftStepTimer, 1000000 / leftMotorSpeed, true);  // 1Mhz / # =  rate
+      timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // don't step
     }
 
     if (abs(rightMotorSpeed) >= 1) {
-      timerAlarmWrite(rightStepTimer, 1000000 / rightMotorSpeed, true);  // 1Mhz / # =  rate
+      timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
     }
