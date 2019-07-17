@@ -114,8 +114,8 @@ void setup() {
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
-  PIDA.SetSampleTime(1);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
-  PIDS.SetSampleTime(1);
+  PIDA.SetSampleTime(5);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
+  PIDS.SetSampleTime(5);
   PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
@@ -157,7 +157,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
-    digitalWrite(LED_BUILTIN, (millis() % 700 < 300));
+    digitalWrite(LED_BUILTIN, (millis() % 500 < 250));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       digitalWrite(ENS_PIN, LOW);  // enables stepper motors
