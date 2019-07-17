@@ -9,12 +9,13 @@
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 250  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
-#define DACUnitsPerVolt 123.4  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
+#define DACUnitsPerVolt 192.1  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
+float ACCEL_VAL = 75;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
-float TURN_SPEED_SCALER = 1.05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
+float TURN_SPEED_SCALER = .1;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
@@ -47,6 +48,8 @@ boolean tipped = false;
 double targetPitch = 0.000;  // what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
 volatile int leftMotorSpeed = 0;  // stepper ticks per second that the left motor is currently doing "volatile" because used in an interrupt
 volatile int rightMotorSpeed = 0;
+volatile int leftMotorWriteSpeed = 0;  // after acceleration
+volatile int rightMotorWriteSpeed = 0;
 double motorSpeedVal = 0;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
 double speedVal = 0;  // how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;  // (positive=turn right, negative=turn left)
@@ -114,8 +117,8 @@ void setup() {
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
-  PIDA.SetSampleTime(5);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
-  PIDS.SetSampleTime(5);
+  PIDA.SetSampleTime(10);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
+  PIDS.SetSampleTime(10);
   PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
@@ -172,27 +175,29 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     PIDS.Compute();  // compute the PID, it changes the variables you set it up with earlier.
     PIDA.Compute();
 
-    leftMotorSpeed = constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the left motor should go
-    rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the right motor should go
+    leftMotorSpeed = (constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED));
+    rightMotorSpeed = (constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED));
+    leftMotorWriteSpeed += constrain(leftMotorSpeed - leftMotorWriteSpeed, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the left motor should go
+    rightMotorWriteSpeed += constrain(rightMotorSpeed - rightMotorWriteSpeed, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the right motor should go
 
-    if (leftMotorSpeed >= 0) {
+    if (leftMotorWriteSpeed >= 0) {
       digitalWrite(LEFT_DIR_PIN, HIGH);
     } else {
       digitalWrite(LEFT_DIR_PIN, LOW);
     }
 
-    if (rightMotorSpeed >= 0) {
+    if (rightMotorWriteSpeed >= 0) {
       digitalWrite(RIGHT_DIR_PIN, HIGH);
     } else {
       digitalWrite(RIGHT_DIR_PIN, LOW);
     }
-    if (abs(leftMotorSpeed) >= 1) {
-      timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorSpeed), true);  // 1Mhz / # =  rate
+    if (abs(leftMotorWriteSpeed) >= 1) {
+      timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // don't step
     }
-    if (abs(rightMotorSpeed) >= 1) {
-      timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorSpeed), true);  // 1Mhz / # =  rate
+    if (abs(rightMotorWriteSpeed) >= 1) {
+      timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
     }
