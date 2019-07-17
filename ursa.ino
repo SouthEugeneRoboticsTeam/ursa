@@ -8,13 +8,13 @@
 
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
-#define WiFiLossDisableIntervalMillis 100  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
+#define WiFiLossDisableIntervalMillis 250  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 #define DACUnitsPerVolt 123.4  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
-int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
+int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
-float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
+float TURN_SPEED_SCALER = 1.05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
@@ -22,8 +22,8 @@ float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that
 // change the direction at which the motor is driven.
 #define LEFT_STEP_PIN GPIO_NUM_32
 #define LEFT_DIR_PIN GPIO_NUM_33
-#define RIGHT_STEP_PIN GPIO_NUM_34
-#define RIGHT_DIR_PIN GPIO_NUM_35
+#define RIGHT_STEP_PIN GPIO_NUM_25
+#define RIGHT_DIR_PIN GPIO_NUM_26
 #define ENS_PIN GPIO_NUM_23  // pin wired to both motor driver chips' ENable pins, to turn on and off motors
 #define LED_BUILTIN GPIO_NUM_2
 #define VOLTAGE_PIN GPIO_NUM_36  // ADC1 CH0
@@ -121,8 +121,6 @@ void setup() {
 
   recallSettings();
 
-  setupStepperRMTs();
-
   setupMPU6050();  // this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
   zeroMPU6050();  // this function averages some gyro readings so later the readings can be calibrated to zero. This function blocks until the robot is held stil, so the robot needs to be set flat on the ground on startup
 
@@ -159,7 +157,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
-    digitalWrite(LED_BUILTIN,(millis()%1000<500));
+    digitalWrite(LED_BUILTIN, (millis() % 700 < 300));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       digitalWrite(ENS_PIN, LOW);  // enables stepper motors
@@ -177,23 +175,37 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     leftMotorSpeed = constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the left motor should go
     rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the right motor should go
 
+    if (leftMotorSpeed >= 0) {
+      digitalWrite(LEFT_DIR_PIN, HIGH);
+    } else {
+      digitalWrite(LEFT_DIR_PIN, LOW);
+    }
+
+    if (rightMotorSpeed >= 0) {
+      digitalWrite(RIGHT_DIR_PIN, HIGH);
+    } else {
+      digitalWrite(RIGHT_DIR_PIN, LOW);
+    }
     if (abs(leftMotorSpeed) >= 1) {
-      timerAlarmWrite(leftStepTimer, 1000000 / leftMotorSpeed, true);  // 1Mhz / # =  rate
+      timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // don't step
     }
-
     if (abs(rightMotorSpeed) >= 1) {
-      timerAlarmWrite(rightStepTimer, 1000000 / rightMotorSpeed, true);  // 1Mhz / # =  rate
+      timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
     }
+    timerAlarmEnable(leftStepTimer);
+    timerAlarmEnable(rightStepTimer);
   } else {  // disable
     digitalWrite(LED_BUILTIN, HIGH);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
     timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
     timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
+    timerAlarmEnable(leftStepTimer);
+    timerAlarmEnable(rightStepTimer);
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
     digitalWrite(ENS_PIN, HIGH);  // disables stepper motors
@@ -239,7 +251,7 @@ byte createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER); // 0=back, 100/8=stop, 200=forwards
+  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER); // 0=back, 100=stop, 200=forwards
   turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER); // 0=left, 200=right
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
 
