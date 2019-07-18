@@ -213,6 +213,10 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     timerAlarmEnable(rightStepTimer);
     leftMotorSpeed = 0;
     rightMotorSpeed = 0;
+    leftMotorWriteSpeed = 0;
+    rightMotorWriteSpeed = 0;
+    targetPitch = 0;
+    motorSpeedVal = 0;
     digitalWrite(ENS_PIN, HIGH);  // disables stepper motors
   }
 
@@ -256,8 +260,8 @@ byte createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER); // 0=back, 100=stop, 200=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER); // 0=left, 200=right
+  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER);
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER);
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
 
   for (int i = 0; i < numAuxRecv; i++) {
