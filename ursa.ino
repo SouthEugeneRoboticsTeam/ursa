@@ -185,12 +185,12 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     } else {
       digitalWrite(LEFT_DIR_PIN, LOW);
     }
-
     if (rightMotorWriteSpeed >= 0) {
       digitalWrite(RIGHT_DIR_PIN, HIGH);
     } else {
       digitalWrite(RIGHT_DIR_PIN, LOW);
     }
+    
     if (abs(leftMotorWriteSpeed) >= 1) {
       timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
