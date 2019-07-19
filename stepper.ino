@@ -15,8 +15,8 @@ void setupStepperTimers() {
   rightStepTimer = timerBegin(3, 80, true);  // 80Mhz / 80  = 1Mhz, 1microsecond
   timerAttachInterrupt(leftStepTimer, &onLeftStepTimer, true);
   timerAttachInterrupt(rightStepTimer, &onRightStepTimer, true);
-  timerAlarmWrite(leftStepTimer, 100000000000000000, true);  // 1Mhz / # =  rate // practically never
-  timerAlarmWrite(rightStepTimer, 100000000000000000, true);  // 1Mhz / # =  rate
+  timerAlarmWrite(leftStepTimer, 1e17, true);  // 1Mhz / # =  rate // practically never
+  timerAlarmWrite(rightStepTimer, 1e17, true);  // 1Mhz / # =  rate
   timerAlarmEnable(leftStepTimer);
   timerAlarmEnable(rightStepTimer);
 }

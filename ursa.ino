@@ -10,13 +10,13 @@
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 250  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 #define DACUnitsPerVolt 192.1  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
-float ACCEL_VAL = 75;  // limits maximum change in speed value per loop
+float ACCEL_VAL = 150;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
 float TURN_SPEED_SCALER = .1;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
-float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
+float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -92,7 +92,7 @@ byte saverecallState = 0;  // 0=don't send don't save  1=send  2=save
 WiFiUDP Udp;
 
 PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, DIRECT);  // setup the Speed PID loop
+PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, REVERSE);  // setup the Speed PID loop
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -119,7 +119,7 @@ void setup() {
   PIDS.SetMode(MANUAL);
   PIDA.SetSampleTime(10);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
   PIDS.SetSampleTime(10);
-  PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
+  PIDA.SetOutputLimits(-ACCEL_VAL, ACCEL_VAL);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
   recallSettings();
@@ -172,13 +172,11 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
-    PIDS.Compute();  // compute the PID, it changes the variables you set it up with earlier.
     PIDA.Compute();
+    PIDS.Compute();  // compute the PID, it changes the variables you set it up with earlier.
 
-    leftMotorSpeed = (constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED));
-    rightMotorSpeed = (constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED));
-    leftMotorWriteSpeed += constrain(leftMotorSpeed - leftMotorWriteSpeed, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the left motor should go
-    rightMotorWriteSpeed += constrain(rightMotorSpeed - rightMotorWriteSpeed, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the right motor should go
+    leftMotorWriteSpeed += constrain(motorSpeedVal + turnSpeedVal, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the left motor should go
+    rightMotorWriteSpeed += constrain(motorSpeedVal - turnSpeedVal, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the right motor should go
 
     if (leftMotorWriteSpeed >= 0) {
       digitalWrite(LEFT_DIR_PIN, HIGH);
@@ -190,16 +188,16 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     } else {
       digitalWrite(RIGHT_DIR_PIN, LOW);
     }
-    
+
     if (abs(leftMotorWriteSpeed) >= 1) {
       timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
-      timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // don't step
+      timerAlarmWrite(leftStepTimer, 1e17, true);  // don't step
     }
     if (abs(rightMotorWriteSpeed) >= 1) {
       timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
-      timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
+      timerAlarmWrite(rightStepTimer, 1e17, true);  // don't step
     }
     timerAlarmEnable(leftStepTimer);
     timerAlarmEnable(rightStepTimer);
@@ -207,8 +205,8 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     digitalWrite(LED_BUILTIN, HIGH);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
-    timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
-    timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
+    timerAlarmWrite(leftStepTimer, 1e17, true);  // 1Mhz / # =  rate
+    timerAlarmWrite(rightStepTimer, 1e17, true);  // 1Mhz / # =  rate
     timerAlarmEnable(leftStepTimer);
     timerAlarmEnable(rightStepTimer);
     leftMotorSpeed = 0;
@@ -232,8 +230,8 @@ byte createDataToSend() {
   addByteToBuffer(MODEL_NO, counter);
   addFloatToBuffer(pitch, counter);
   addByteToBuffer(voltage, counter);
-  addIntToBuffer(leftMotorSpeed, counter);
-  addIntToBuffer(rightMotorSpeed, counter);
+  addIntToBuffer(leftMotorWriteSpeed, counter);
+  addIntToBuffer(rightMotorWriteSpeed, counter);
   addFloatToBuffer(targetPitch, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
 
