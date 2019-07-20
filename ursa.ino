@@ -176,7 +176,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     PIDS.Compute();  // compute the PID, it changes the variable (motorSpeedVal) you set it up with earlier.
 
     leftMotorSpeed += constrain(motorSpeedVal, -ACCEL_VAL, ACCEL_VAL);  // accelerate leftMotorSpeed by motorSpeedVal
-    rightMotorSpeed += constrain(motorSpeedVal - turnSpeedVal, -ACCEL_VAL, ACCEL_VAL);
+    rightMotorSpeed += constrain(motorSpeedVal, -ACCEL_VAL, ACCEL_VAL);
     leftMotorWriteSpeed = leftMotorSpeed + turnSpeedVal;  // combine turnSpeedVal and the motor speed required for forwards/backwards movement so the robot can move and turn
     rightMotorWriteSpeed = rightMotorSpeed - turnSpeedVal;  // positive turn=turn to the right -> right wheel needs to slow down -> subtract turnSpeedVal for right motor
 
