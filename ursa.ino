@@ -173,10 +173,12 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDA.Compute();
-    PIDS.Compute();  // compute the PID, it changes the variables you set it up with earlier.
+    PIDS.Compute();  // compute the PID, it changes the variable (motorSpeedVal) you set it up with earlier.
 
-    leftMotorWriteSpeed += constrain(motorSpeedVal + turnSpeedVal, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the left motor should go
-    rightMotorWriteSpeed += constrain(motorSpeedVal - turnSpeedVal, -ACCEL_VAL, ACCEL_VAL); // combine motor speed and turn to find the speed the right motor should go
+    leftMotorSpeed += constrain(motorSpeedVal, -ACCEL_VAL, ACCEL_VAL);  // accelerate leftMotorSpeed by motorSpeedVal
+    rightMotorSpeed += constrain(motorSpeedVal - turnSpeedVal, -ACCEL_VAL, ACCEL_VAL);
+    leftMotorWriteSpeed = leftMotorSpeed + turnSpeedVal;  // combine turnSpeedVal and the motor speed required for forwards/backwards movement so the robot can move and turn
+    rightMotorWriteSpeed = rightMotorSpeed - turnSpeedVal;  // positive turn=turn to the right -> right wheel needs to slow down -> subtract turnSpeedVal for right motor
 
     if (leftMotorWriteSpeed >= 0) {
       digitalWrite(LEFT_DIR_PIN, HIGH);
