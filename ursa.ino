@@ -10,7 +10,7 @@
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 250  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 #define DACUnitsPerVolt 192.1  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
-float ACCEL_VAL = 150;  // limits maximum change in speed value per loop
+float MAX_ACCEL = 150;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
@@ -46,11 +46,10 @@ boolean enable = false;           // is the DS telling the robot to enable? (dif
 boolean tipped = false;
 
 double targetPitch = 0.000;  // what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
-volatile int leftMotorSpeed = 0;  // stepper ticks per second that the left motor is currently doing "volatile" because used in an interrupt
-volatile int rightMotorSpeed = 0;
+double motorSpeed = 0.000;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
 volatile int leftMotorWriteSpeed = 0;  // after acceleration
 volatile int rightMotorWriteSpeed = 0;
-double motorSpeedVal = 0;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
+double motorAccel = 0;  // how many stepper ticks per second per loop cycle the motors should be made to accelerate at, used as output of angle balancing loop
 double speedVal = 0;  // how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;  // (positive=turn right, negative=turn left)
 
@@ -91,8 +90,8 @@ byte saverecallState = 0;  // 0=don't send don't save  1=send  2=save
 
 WiFiUDP Udp;
 
-PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, REVERSE);  // setup the Speed PID loop
+PID PIDA(&pitch, &motorAccel, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
+PID PIDS(&motorSpeed, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, REVERSE);  // setup the Speed PID loop
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -119,7 +118,7 @@ void setup() {
   PIDS.SetMode(MANUAL);
   PIDA.SetSampleTime(10);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
   PIDS.SetSampleTime(10);
-  PIDA.SetOutputLimits(-ACCEL_VAL, ACCEL_VAL);
+  PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
   recallSettings();
@@ -168,17 +167,17 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
 
-    PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
+    PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
     PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDA.Compute();
     PIDS.Compute();  // compute the PID, it changes the variable (motorSpeedVal) you set it up with earlier.
 
-    leftMotorSpeed += constrain(motorSpeedVal, -ACCEL_VAL, ACCEL_VAL);  // accelerate leftMotorSpeed by motorSpeedVal
-    rightMotorSpeed += constrain(motorSpeedVal, -ACCEL_VAL, ACCEL_VAL);
-    leftMotorWriteSpeed = leftMotorSpeed + turnSpeedVal;  // combine turnSpeedVal and the motor speed required for forwards/backwards movement so the robot can move and turn
-    rightMotorWriteSpeed = rightMotorSpeed - turnSpeedVal;  // positive turn=turn to the right -> right wheel needs to slow down -> subtract turnSpeedVal for right motor
+    motorSpeed += constrain(motorAccel, -MAX_ACCEL, MAX_ACCEL);
+    motorSpeed = constrain(motorSpeed, -MAX_SPEED, MAX_SPEED);
+    leftMotorWriteSpeed = constrain(motorSpeed + turnSpeedVal, -MAX_SPEED, MAX_SPEED); // combine turnSpeedVal and the motor speed required for forwards/backwards movement so the robot can move and turn
+    rightMotorWriteSpeed = constrain(motorSpeed - turnSpeedVal, -MAX_SPEED, MAX_SPEED); // positive turn=turn to the right -> right wheel needs to slow down -> subtract turnSpeedVal for right motor
 
     if (leftMotorWriteSpeed >= 0) {
       digitalWrite(LEFT_DIR_PIN, HIGH);
@@ -211,12 +210,11 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
     timerAlarmWrite(rightStepTimer, 1e17, true);  // 1Mhz / # =  rate
     timerAlarmEnable(leftStepTimer);
     timerAlarmEnable(rightStepTimer);
-    leftMotorSpeed = 0;
-    rightMotorSpeed = 0;
     leftMotorWriteSpeed = 0;
     rightMotorWriteSpeed = 0;
     targetPitch = 0;
-    motorSpeedVal = 0;
+    motorAccel = 0;
+    motorSpeed = 0;
     digitalWrite(ENS_PIN, HIGH);  // disables stepper motors
   }
 
