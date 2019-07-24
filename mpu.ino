@@ -41,8 +41,9 @@ void readMPU6050() {
   if (micros() < lastCalcedMPU6050) {  // try to handle micros' long overflow in a harmless way
     lastCalcedMPU6050 = micros() - 10000;
   }
-
-  pitch = COMPLEMENTARY_FILTER_CONSTANT * ((pitch) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000) + (1 - COMPLEMENTARY_FILTER_CONSTANT) * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset); // complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
+  // complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
+  pitch = COMPLEMENTARY_FILTER_CONSTANT * ((pitch) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000)  // add rotation rate as measured by the gyro to current pitch - valid in short term
+          + (1 - COMPLEMENTARY_FILTER_CONSTANT) * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset);     // in the long term drift towards the angle of gravity measured by the accelerometer
   lastCalcedMPU6050 = micros();  // record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
 
