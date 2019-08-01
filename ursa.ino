@@ -13,10 +13,10 @@
 float MAX_ACCEL = 175;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
-float MAX_TIP = 15;  // angle the robot shouldn't go too much past, the output limit for the speed PID loop
-float DISABLE_TIP = 45; // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
-float DRIVE_SPEED_SCALER = .45;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
-float TURN_SPEED_SCALER = .15;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
+float MAX_TIP = 18;  // angle the robot shouldn't go too much past, the output limit for the speed PID loop
+float DISABLE_TIP = 50; // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
+float DRIVE_SPEED_SCALER = .7;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
+float TURN_SPEED_SCALER = .2;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to

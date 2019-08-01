@@ -48,7 +48,7 @@ void readMPU6050() {
     if (!wasRobotEnabled) {
       pitchOffset = (pitch + pitchOffset);
     }
-    pitchOffset = (pitch + pitchOffset) * (1 - .9999) + pitchOffset * (.9999);
+    pitchOffset = (pitch + pitchOffset) * (1 - .999970) + pitchOffset * (.999970);
   }
   lastCalcedMPU6050 = micros();  // record time of last calculation so we know next time how much time has passed (how much time to integrate rotation rate for)
 }
