@@ -30,8 +30,8 @@ float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so tha
 #define LED_BUILTIN GPIO_NUM_2
 #define VOLTAGE_PIN GPIO_NUM_36  // ADC1 CH0
 
-#define movementThreshold 25
-#define movementMeasurements 15
+#define movementThreshold 20
+#define movementMeasurements 20
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
@@ -234,6 +234,7 @@ byte createDataToSend() {
   addIntToBuffer(leftMotorWriteSpeed, counter);
   addIntToBuffer(rightMotorWriteSpeed, counter);
   addFloatToBuffer(targetPitch, counter);
+  addFloatToBuffer(pitchOffset, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
 
   for (int i = 0; i < numSendAux; i++) {
