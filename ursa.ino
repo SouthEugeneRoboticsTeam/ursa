@@ -10,13 +10,13 @@
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 500  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 #define DACUnitsPerVolt 192.1  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
-float MAX_ACCEL = 175;  // limits maximum change in speed value per loop
+float MAX_ACCEL = 180;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
-float MAX_TIP = 18;  // angle the robot shouldn't go too much past, the output limit for the speed PID loop
+float MAX_TIP = 13;  // angle the robot shouldn't go too much past, the output limit for the speed PID loop
 float DISABLE_TIP = 50; // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
-float DRIVE_SPEED_SCALER = .7;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
-float TURN_SPEED_SCALER = .2;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
+float DRIVE_SPEED_SCALER = .8;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
+float TURN_SPEED_SCALER = .27;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
