@@ -23,8 +23,6 @@ void WiFiTaskFunction(void * pvParameters) {
         xSemaphoreGive(mutexReceive);
       }
     }
-
-    vTaskDelay(10);  // allow idle task to run so task watchdog timer isn't triggered
   }
 }
 
@@ -39,7 +37,7 @@ void setupWifi() {
     "WiFiTask",  /* Name of the task */
     15000,       /* Stack size in words */
     NULL,        /* Task input parameter */
-    1,           /* Priority of the task */
+    0,           /* Priority of the task */
     NULL,        /* Task handle. */
     0            /* Core on which task should run */
   );

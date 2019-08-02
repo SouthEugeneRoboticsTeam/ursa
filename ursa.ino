@@ -8,14 +8,16 @@
 
 #define ROBOT_ID 0  // unique robot ID, sent to DS, and used to name wifi network
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
-#define WiFiLossDisableIntervalMillis 100  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
-#define DACUnitsPerVolt 123.4  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
+#define WiFiLossDisableIntervalMillis 500  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
+#define DACUnitsPerVolt 192.1  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
+float MAX_ACCEL = 180;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
-int MAX_SPEED = 4000;  // max speed (in steps/sec) that the motors can run at
-float MAX_TIP = 60;  // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
-float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
-float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
-float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balanced, not that the control loop cares. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
+int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
+float MAX_TIP = 13;  // angle the robot shouldn't go too much past, the output limit for the speed PID loop
+float DISABLE_TIP = 50; // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
+float DRIVE_SPEED_SCALER = .8;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
+float TURN_SPEED_SCALER = .27;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
+float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -28,8 +30,8 @@ float pitchOffset = 0.000;  // subtracted from the output in readMPU6050 so that
 #define LED_BUILTIN GPIO_NUM_2
 #define VOLTAGE_PIN GPIO_NUM_36  // ADC1 CH0
 
-#define movementThreshold 25
-#define movementMeasurements 15
+#define movementThreshold 20
+#define movementMeasurements 20
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
 #define maxWifiSendBufSize 50  // max number of bytes to send
@@ -45,9 +47,10 @@ boolean enable = false;           // is the DS telling the robot to enable? (dif
 boolean tipped = false;
 
 double targetPitch = 0.000;  // what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
-volatile int leftMotorSpeed = 0;  // stepper ticks per second that the left motor is currently doing "volatile" because used in an interrupt
-volatile int rightMotorSpeed = 0;
-double motorSpeedVal = 0;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
+double motorSpeed = 0.000;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
+volatile int leftMotorWriteSpeed = 0;  // after acceleration
+volatile int rightMotorWriteSpeed = 0;
+double motorAccel = 0;  // how many stepper ticks per second per loop cycle the motors should be made to accelerate at, used as output of angle balancing loop
 double speedVal = 0;  // how many stepper ticks per second the robot should try to drive at-the input to the speed control loop.
 int turnSpeedVal = 0;  // (positive=turn right, negative=turn left)
 
@@ -88,8 +91,8 @@ byte saverecallState = 0;  // 0=don't send don't save  1=send  2=save
 
 WiFiUDP Udp;
 
-PID PIDA(&pitch, &motorSpeedVal, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeedVal, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, DIRECT);  // setup the Speed PID loop
+PID PIDA(&pitch, &motorAccel, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
+PID PIDS(&motorSpeed, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, REVERSE);  // setup the Speed PID loop
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -114,14 +117,12 @@ void setup() {
 
   PIDA.SetMode(MANUAL);  // PID loop off
   PIDS.SetMode(MANUAL);
-  PIDA.SetSampleTime(1);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
-  PIDS.SetSampleTime(1);
-  PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
+  PIDA.SetSampleTime(10);  // tell the PID loop how often to run (in milliseconds) We have to call PID.Compute() at least this often
+  PIDS.SetSampleTime(10);
+  PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
   recallSettings();
-
-  setupStepperRMTs();
 
   setupMPU6050();  // this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
   zeroMPU6050();  // this function averages some gyro readings so later the readings can be calibrated to zero. This function blocks until the robot is held stil, so the robot needs to be set flat on the ground on startup
@@ -147,7 +148,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
 
   robotEnabled = enable;
 
-  if (abs(pitch) > MAX_TIP) {
+  if (abs(pitch) > DISABLE_TIP) {
     tipped = true;
     robotEnabled = false;
   } else {
@@ -159,7 +160,7 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
-    digitalWrite(LED_BUILTIN,(millis()%1000<500));
+    digitalWrite(LED_BUILTIN, (millis() % 500 < 250));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
       digitalWrite(ENS_PIN, LOW);  // enables stepper motors
@@ -167,35 +168,54 @@ void loop() {  // on core 1. the balencing control loop will be here, with the g
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
 
-    PIDA.SetOutputLimits(-MAX_SPEED, MAX_SPEED);
+    PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
     PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
-    PIDS.Compute();  // compute the PID, it changes the variables you set it up with earlier.
     PIDA.Compute();
+    PIDS.Compute();  // compute the PID, it changes the variable (motorSpeedVal) you set it up with earlier.
 
-    leftMotorSpeed = constrain(motorSpeedVal + turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the left motor should go
-    rightMotorSpeed = constrain(motorSpeedVal - turnSpeedVal, -MAX_SPEED, MAX_SPEED);  // combine motor speed and turn to find the speed the right motor should go
+    motorSpeed += constrain(motorAccel, -MAX_ACCEL, MAX_ACCEL);
+    motorSpeed = constrain(motorSpeed, -MAX_SPEED, MAX_SPEED);
+    leftMotorWriteSpeed = constrain(motorSpeed + turnSpeedVal, -MAX_SPEED, MAX_SPEED); // combine turnSpeedVal and the motor speed required for forwards/backwards movement so the robot can move and turn
+    rightMotorWriteSpeed = constrain(motorSpeed - turnSpeedVal, -MAX_SPEED, MAX_SPEED); // positive turn=turn to the right -> right wheel needs to slow down -> subtract turnSpeedVal for right motor
 
-    if (abs(leftMotorSpeed) >= 1) {
-      timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorSpeed), true);  // 1Mhz / # =  rate
+    if (leftMotorWriteSpeed >= 0) {
+      digitalWrite(LEFT_DIR_PIN, HIGH);
     } else {
-      timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // don't step
+      digitalWrite(LEFT_DIR_PIN, LOW);
+    }
+    if (rightMotorWriteSpeed >= 0) {
+      digitalWrite(RIGHT_DIR_PIN, HIGH);
+    } else {
+      digitalWrite(RIGHT_DIR_PIN, LOW);
     }
 
-    if (abs(rightMotorSpeed) >= 1) {
-      timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorSpeed), true);  // 1Mhz / # =  rate
+    if (abs(leftMotorWriteSpeed) >= 1) {
+      timerAlarmWrite(leftStepTimer, 1000000 / abs(leftMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
-      timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // don't step
+      timerAlarmWrite(leftStepTimer, 1e17, true);  // don't step
     }
+    if (abs(rightMotorWriteSpeed) >= 1) {
+      timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorWriteSpeed), true);  // 1Mhz / # =  rate
+    } else {
+      timerAlarmWrite(rightStepTimer, 1e17, true);  // don't step
+    }
+    timerAlarmEnable(leftStepTimer);
+    timerAlarmEnable(rightStepTimer);
   } else {  // disable
     digitalWrite(LED_BUILTIN, HIGH);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
-    timerAlarmWrite(leftStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
-    timerAlarmWrite(rightStepTimer, 10000000000000000, true);  // 1Mhz / # =  rate
-    leftMotorSpeed = 0;
-    rightMotorSpeed = 0;
+    timerAlarmWrite(leftStepTimer, 1e17, true);  // 1Mhz / # =  rate
+    timerAlarmWrite(rightStepTimer, 1e17, true);  // 1Mhz / # =  rate
+    timerAlarmEnable(leftStepTimer);
+    timerAlarmEnable(rightStepTimer);
+    leftMotorWriteSpeed = 0;
+    rightMotorWriteSpeed = 0;
+    targetPitch = 0;
+    motorAccel = 0;
+    motorSpeed = 0;
     digitalWrite(ENS_PIN, HIGH);  // disables stepper motors
   }
 
@@ -211,9 +231,10 @@ byte createDataToSend() {
   addByteToBuffer(MODEL_NO, counter);
   addFloatToBuffer(pitch, counter);
   addByteToBuffer(voltage, counter);
-  addIntToBuffer(leftMotorSpeed, counter);
-  addIntToBuffer(rightMotorSpeed, counter);
+  addIntToBuffer(leftMotorWriteSpeed, counter);
+  addIntToBuffer(rightMotorWriteSpeed, counter);
   addFloatToBuffer(targetPitch, counter);
+  addFloatToBuffer(pitchOffset, counter);
   addByteToBuffer(numSendAux, counter);  // how many bytes of extra data
 
   for (int i = 0; i < numSendAux; i++) {
@@ -239,8 +260,8 @@ byte createDataToSend() {
 void parseDataReceived() {  // put parse functions here
   byte counter = 0;
   enable = readBoolFromBuffer(counter);
-  speedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER); // 0=back, 100/8=stop, 200=forwards
-  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER); // 0=left, 200=right
+  speedVal = map(readByteFromBuffer(counter), 200, 0, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER);
+  turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER);
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
 
   for (int i = 0; i < numAuxRecv; i++) {

@@ -6,6 +6,7 @@ void recallSettings() {
   kP_speed = EEPROMreadFloat(counter);
   kI_speed = EEPROMreadFloat(counter);
   kD_speed = EEPROMreadFloat(counter);
+  pitchOffset = EEPROMreadFloat(counter);
 }
 
 void saveSettings() {
@@ -16,6 +17,7 @@ void saveSettings() {
   EEPROMwriteFloat(kP_speed, counter);
   EEPROMwriteFloat(kI_speed, counter);
   EEPROMwriteFloat(kD_speed, counter);
+  EEPROMwriteFloat(pitchOffset, counter);
   EEPROM.commit();
 }
 
