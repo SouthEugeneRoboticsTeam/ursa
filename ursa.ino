@@ -78,7 +78,7 @@ byte numAuxRecv = 0;  // how many bytes of control data for extra things
 byte auxRecvArray[12] = {0};  // size of numAuxRecv
 byte numSendAux = 0;  // how many bytes of sensor data to send
 byte auxSendArray[12] = {0};  // size of numAuxSend
-uint32_t lastMessageTimeMillis = 0;
+volatile uint32_t lastMessageTimeMillis = 0;
 byte saverecallState = 0;  // 0=don't send don't save  1=send  2=save
 
 WiFiUDP Udp;
@@ -127,8 +127,11 @@ void setup() {
 }
 
 void loop() {  // on core 1. the balancing control loop will be here, with the goal of keeping this loop as fast as possible
+
   readMPU6050();
+
   voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
+
   if (receivedNewData) {
     if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
       parseDataReceived();
