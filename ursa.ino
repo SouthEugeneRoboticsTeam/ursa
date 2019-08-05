@@ -163,8 +163,6 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
       PIDS.SetMode(AUTOMATIC);  // turn on the PID
     }
 
-    PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
-    PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
     PIDA.SetTunings(kP_angle, kI_angle, kD_angle);
     PIDS.SetTunings(kP_speed, kI_speed, kD_speed);
     PIDA.Compute();
