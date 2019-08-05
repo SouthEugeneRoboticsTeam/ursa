@@ -66,9 +66,6 @@ double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. neg
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
 
-volatile boolean rightForwardBl = false;  // was the motor moving forwards last time the interrupt was called
-volatile boolean leftForwardBl = false;
-
 byte numBytesToSend = 0;
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
