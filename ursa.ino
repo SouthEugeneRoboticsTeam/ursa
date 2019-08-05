@@ -1,6 +1,5 @@
 #include <PID_v1.h>
 #include <Wire.h>  // scl=22 sda=21
-#include "driver/rmt.h"
 #include <WiFi.h>
 #include <WiFiAP.h>
 #include <WiFiUdp.h>
@@ -47,8 +46,8 @@ boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
 boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
 
-double targetPitch = 0.000;  // what angle the balencing control loop should aim for the robot to be at, the output of the speed control loop
-double motorSpeed = 0.000;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balencing, not one for each motor
+double targetPitch = 0.000;  // what angle the balancing control loop should aim for the robot to be at, the output of the speed control loop
+double motorSpeed = 0.000;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balancing, not one for each motor
 volatile int leftMotorWriteSpeed = 0;  // after acceleration
 volatile int rightMotorWriteSpeed = 0;
 double motorAccel = 0;  // how many stepper ticks per second per loop cycle the motors should be made to accelerate at, used as output of angle balancing loop
@@ -66,11 +65,6 @@ double pitch = 0.000;  // output (in degrees) from the MPU6050 reading code. neg
 
 hw_timer_t *leftStepTimer = NULL;
 hw_timer_t *rightStepTimer = NULL;
-
-rmt_config_t leftConfig;    // settings for RMT pulse for stepper motor
-rmt_item32_t leftItems[1];  // holds definition of pulse for stepper motor
-rmt_config_t rightConfig;
-rmt_item32_t rightItems[1];
 
 volatile boolean rightForwardBl = false;  // was the motor moving forwards last time the interrupt was called
 volatile boolean leftForwardBl = false;
@@ -135,7 +129,7 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
 }
 
-void loop() {  // on core 1. the balencing control loop will be here, with the goal of keeping this loop as fast as possible
+void loop() {  // on core 1. the balancing control loop will be here, with the goal of keeping this loop as fast as possible
   readMPU6050();
   voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
   if (receivedNewData) {
