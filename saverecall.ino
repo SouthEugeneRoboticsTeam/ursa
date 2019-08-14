@@ -7,6 +7,9 @@ void recallSettings() {
   kI_speed = EEPROMreadFloat(counter);
   kD_speed = EEPROMreadFloat(counter);
   pitchOffset = EEPROMreadFloat(counter);
+  if (pitchOffset != pitchOffset) {//NaN check
+    pitchOffset = 0;
+  }
 }
 
 void saveSettings() {
