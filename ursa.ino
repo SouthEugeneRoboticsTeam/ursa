@@ -34,7 +34,7 @@ float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so tha
 #define movementMeasurements 20
 
 #define maxWifiRecvBufSize 50  // max number of bytes to receive
-#define maxWifiSendBufSize 50  // max number of bytes to send
+#define maxWifiSendBufSize 51  // max number of bytes to send
 
 byte voltage = 0;  // 0v=0 13v=255
 
