@@ -9,15 +9,23 @@
 #define MODEL_NO 0  // unique configuration of robot which can be used to identify additional features
 #define WiFiLossDisableIntervalMillis 500  // if no data packet has been recieved for this number of milliseconds, the robot disables to prevent running away
 #define DACUnitsPerVolt 200.0  // Use to calibrate voltage read through voltage divider. Divide analogRead value by this constant to get voltage. Analog read is from 0 to 4095 corresponding to 0 to 3.3 volts.
-float MAX_ACCEL = 180;  // limits maximum change in speed value per loop
+float MAX_ACCEL = 170;  // limits maximum change in speed value per loop
 float COMPLEMENTARY_FILTER_CONSTANT = .9997;  // higher = more gyro based, lower=more accelerometer based
 int MAX_SPEED = 1500;  // max speed (in steps/sec) that the motors can run at
 float MAX_TIP = 14;  // angle the robot shouldn't go too much past, the output limit for the speed PID loop
-float DISABLE_TIP = 50; // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
+float DISABLE_TIP = 23; // max angle in degrees the robot will attempt to recover from -- if passed, robot will disable
 float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's target driving speed can be-some extra speed must be kept in reserve to remain balanced
 float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 float PITCH_OFFSET_CHANGE = .999994;  // larger = pitchOffset changes slower
-float pitchOffset = -7.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
+float pitchOffset = -2.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
+
+// Set up the rgb led names; used to control RGB LEDs
+uint8_t RightledR = A15; //GPIO12
+uint8_t RightledG = A16; //GPIO14
+uint8_t RightledB = A17; //GPIO27
+uint8_t LeftledR = A10; //GPIO4
+uint8_t LeftledG = A11; //GPIO0
+uint8_t LeftledB = A12; //GPIO2
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -45,6 +53,7 @@ boolean robotEnabled = false;     // enable outputs?
 boolean wasRobotEnabled = false;  // to know if robotEnabled has changed
 boolean enable = false;           // is the DS telling the robot to enable? (different from robotEnabled so the robot can disable when tipped even if the DS is telling it to enable)
 boolean tipped = false;
+//boolean kickstart = false;
 
 double targetPitch = 0.000;  // what angle the balancing control loop should aim for the robot to be at, the output of the speed control loop
 double motorSpeed = 0.000;  // how much movement in the forwards/backwards direction the motors should move-only one set of control loops is used for balancing, not one for each motor
@@ -114,6 +123,23 @@ void setup() {
   PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
+    // used to control RGB LEDs
+  ledcAttachPin(RightledR, 1); // assign RGB led pins to channels
+  ledcAttachPin(RightledG, 2);
+  ledcAttachPin(RightledB, 3);
+  ledcAttachPin(LeftledR, 4); // assign RGB led pins to channels
+  ledcAttachPin(LeftledG, 5);
+  ledcAttachPin(LeftledB, 6);
+  // Initialize channels 
+  // channels 0-15, resolution 1-16 bits, freq limits depend on resolution
+  // ledcSetup(uint8_t channel, uint32_t freq, uint8_t resolution_bits);
+  ledcSetup(1, 5000, 8); // 5 kHz PWM, 8-bit resolution
+  ledcSetup(2, 5000, 8);
+  ledcSetup(3, 5000, 8);
+  ledcSetup(4, 5000, 8);
+  ledcSetup(5, 5000, 8);
+  ledcSetup(6, 5000, 8);
+
   recallSettings();
 
   setupMPU6050();  // this function starts the connection to the MPU6050 gyro/accelerometer board using the I2C Wire library, and tells the MPU6050 some settings to use
@@ -130,7 +156,8 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
 
   readMPU6050();
 
-  voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
+  //voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
+  voltage = map(analogRead(VOLTAGE_PIN), 0, 4095.0, 0, 255);
 
   if (receivedNewData) {
     if (xSemaphoreTake(mutexReceive, 1) == pdTRUE) {
@@ -143,18 +170,32 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
 
   robotEnabled = enable;
 
-  if (abs(pitch) > DISABLE_TIP) {
+//  if (abs(pitch) >= DISABLE_TIP && !kickstart) {
+if (abs(pitch) > DISABLE_TIP) {
     tipped = true;
     robotEnabled = false;
   } else {
     tipped = false;
   }
 
+//  if (abs(pitch) < (DISABLE_TIP - 3)) {
+//    tipped = false;
+//    kickstart = false;
+//  }
+
+
   if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
     robotEnabled = false;
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
+    ledcWrite(1, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb red
+    ledcWrite(2, 256);
+    ledcWrite(3, (abs(256 - int(millis() % 5120) / 10))*.9);
+    ledcWrite(4, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb red
+    ledcWrite(5, 256);
+    ledcWrite(6, (abs(256 - int(millis() % 5120) / 10))*.9);
+    
     digitalWrite(LED_BUILTIN, (millis() % 500 < 250));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
@@ -197,6 +238,13 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
     timerAlarmEnable(leftStepTimer);
     timerAlarmEnable(rightStepTimer);
   } else {  // disable
+    ledcWrite(1, 256); //turns LEDs off
+    ledcWrite(2, 256);
+    ledcWrite(3, 256);
+    ledcWrite(4, 256); //turns LEDs off
+    ledcWrite(5, 256);
+    ledcWrite(6, 256);
+
     digitalWrite(LED_BUILTIN, HIGH);
     PIDA.SetMode(MANUAL);
     PIDS.SetMode(MANUAL);
@@ -256,6 +304,10 @@ void parseDataReceived() {  // put parse functions here
   speedVal = map(readByteFromBuffer(counter), 200, 0, -MAX_SPEED * DRIVE_SPEED_SCALER, MAX_SPEED * DRIVE_SPEED_SCALER);
   turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER);
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
+
+//  if (enable && !robotEnabled) {
+//    kickstart = true;
+//  }
 
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);
