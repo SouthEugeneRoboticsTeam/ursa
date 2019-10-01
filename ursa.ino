@@ -20,12 +20,12 @@ float PITCH_OFFSET_CHANGE = .999994;  // larger = pitchOffset changes slower
 float pitchOffset = -2.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
 
 // Set up the rgb led names; used to control common-anode RGB LEDs
-uint8_t RightledR = A15; //GPIO12
-uint8_t RightledG = A16; //GPIO14
-uint8_t RightledB = A17; //GPIO27
-uint8_t LeftledR = A10; //GPIO4
-uint8_t LeftledG = A11; //GPIO0
-uint8_t LeftledB = A12; //GPIO2
+uint8_t ledRightR = A15; // GPIO12
+uint8_t ledRightG = A16; // GPIO14
+uint8_t ledRightB = A17; // GPIO27
+uint8_t ledLeftR = A10; // GPIO4
+uint8_t ledLeftG = A11; // GPIO0
+uint8_t ledLeftB = A12; // GPIO2
 
 // The following lines define STEP pins and DIR pins. STEP pins are used to
 // trigger a step (when rides from LOW to HIGH) whereas DIR pins are used to
@@ -123,14 +123,15 @@ void setup() {
   PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
-    // used to control RGB LEDs
-  ledcAttachPin(RightledR, 1); // assign RGB led pins to channels
-  ledcAttachPin(RightledG, 2);
-  ledcAttachPin(RightledB, 3);
-  ledcAttachPin(LeftledR, 4); // assign RGB led pins to channels
-  ledcAttachPin(LeftledG, 5);
-  ledcAttachPin(LeftledB, 6);
-  // Initialize channels 
+  // used to control RGB LEDs
+  ledcAttachPin(ledRightR, 1); // assign RGB led pins to channels
+  ledcAttachPin(ledRightG, 2);
+  ledcAttachPin(ledRightB, 3);
+  ledcAttachPin(ledLeftR, 4); // assign RGB led pins to channels
+  ledcAttachPin(ledLeftG, 5);
+  ledcAttachPin(ledLeftB, 6);
+
+  // Initialize channels
   // channels 0-15, resolution 1-16 bits, freq limits depend on resolution
   // ledcSetup(uint8_t channel, uint32_t freq, uint8_t resolution_bits);
   ledcSetup(1, 5000, 8); // 5 kHz PWM, 8-bit resolution
@@ -153,7 +154,6 @@ void setup() {
 }
 
 void loop() {  // on core 1. the balancing control loop will be here, with the goal of keeping this loop as fast as possible
-
   readMPU6050();
 
   //voltage = map(analogRead(VOLTAGE_PIN) * 1000.00 / DACUnitsPerVolt, 0, 13000.0, 0, 255);
@@ -171,7 +171,7 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
   robotEnabled = enable;
 
 //  if (abs(pitch) >= DISABLE_TIP && !kickstart) {
-if (abs(pitch) > DISABLE_TIP) {
+  if (abs(pitch) > DISABLE_TIP) {
     tipped = true;
     robotEnabled = false;
   } else {
@@ -182,7 +182,6 @@ if (abs(pitch) > DISABLE_TIP) {
 //    tipped = false;
 //    kickstart = false;
 //  }
-
 
   if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
     robotEnabled = false;
@@ -195,7 +194,7 @@ if (abs(pitch) > DISABLE_TIP) {
     ledcWrite(4, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb red
     ledcWrite(5, 256);
     ledcWrite(6, (abs(256 - int(millis() % 5120) / 10))*.9);
-    
+
     digitalWrite(LED_BUILTIN, (millis() % 500 < 250));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
@@ -219,6 +218,7 @@ if (abs(pitch) > DISABLE_TIP) {
     } else {
       digitalWrite(LEFT_DIR_PIN, LOW);
     }
+
     if (rightMotorWriteSpeed >= 0) {
       digitalWrite(RIGHT_DIR_PIN, HIGH);
     } else {
@@ -230,11 +230,13 @@ if (abs(pitch) > DISABLE_TIP) {
     } else {
       timerAlarmWrite(leftStepTimer, 1e17, true);  // don't step
     }
+
     if (abs(rightMotorWriteSpeed) >= 1) {
       timerAlarmWrite(rightStepTimer, 1000000 / abs(rightMotorWriteSpeed), true);  // 1Mhz / # =  rate
     } else {
       timerAlarmWrite(rightStepTimer, 1e17, true);  // don't step
     }
+
     timerAlarmEnable(leftStepTimer);
     timerAlarmEnable(rightStepTimer);
   } else {  // disable
