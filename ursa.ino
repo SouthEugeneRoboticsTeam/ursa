@@ -185,7 +185,8 @@ if (abs(pitch) > DISABLE_TIP) {
 
 
   if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
-    robotEnabled = false;
+    speedVal = 0;
+    turnSpeedVal = 0;
   }
 
   if (robotEnabled) {  // run the following code if the robot is enabled
