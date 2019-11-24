@@ -26,9 +26,20 @@ void WiFiTaskFunction(void * pvParameters) {
   }
 }
 
+void WiFiEvent(WiFiEvent_t event) {
+  switch (event) {
+    case SYSTEM_EVENT_AP_START:
+      Serial.println("configuring wifi");
+      break;
+    default: break;
+  }
+
+}
+
 void setupWifi() {
-  WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
   WiFi.softAP(robotSSID, robotPass, 4, 0, 1);  // start wifi network, on channel 4, not hiding, and only allowing one client
+  delay(1000);
+  WiFi.softAPConfig(IPAddress(10, 25, 21, 1), IPAddress(10, 25, 21, 1), IPAddress(255, 255, 255, 0));
   Udp.begin(2521);  // port 2521 on 10.25.21.1
 
   xTaskCreatePinnedToCore(  // create task to run WiFi recieving

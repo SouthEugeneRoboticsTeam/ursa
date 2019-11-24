@@ -93,7 +93,7 @@ byte saverecallState = 0;  // 0=don't send don't save  1=send  2=save
 WiFiUDP Udp;
 
 PID PIDA(&pitch, &motorAccel, &targetPitch, kP_angle, kI_angle, kD_angle, DIRECT);  // setup the Angle PID loop  PID(&Input, &Output, &Setpoint, Kp, Ki, Kd, Direction)
-PID PIDS(&motorSpeed, &targetPitch, &speedVal, kP_speed, kI_angle, kD_angle, REVERSE);  // setup the Speed PID loop
+PID PIDS(&motorSpeed, &targetPitch, &speedVal, kP_speed, kI_speed, kD_speed, REVERSE);  // setup the Speed PID loop
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -123,14 +123,14 @@ void setup() {
   PIDA.SetOutputLimits(-MAX_ACCEL, MAX_ACCEL);
   PIDS.SetOutputLimits(-MAX_TIP, MAX_TIP);
 
-    // used to control RGB LEDs
+  // used to control RGB LEDs
   ledcAttachPin(RightledR, 1); // assign RGB led pins to channels
   ledcAttachPin(RightledG, 2);
   ledcAttachPin(RightledB, 3);
   ledcAttachPin(LeftledR, 4); // assign RGB led pins to channels
   ledcAttachPin(LeftledG, 5);
   ledcAttachPin(LeftledB, 6);
-  // Initialize channels 
+  // Initialize channels
   // channels 0-15, resolution 1-16 bits, freq limits depend on resolution
   // ledcSetup(uint8_t channel, uint32_t freq, uint8_t resolution_bits);
   ledcSetup(1, 5000, 8); // 5 kHz PWM, 8-bit resolution
@@ -170,19 +170,21 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
 
   robotEnabled = enable;
 
-//  if (abs(pitch) >= DISABLE_TIP && !kickstart) {
-if (abs(pitch) > DISABLE_TIP) {
+  //  if (abs(pitch) >= DISABLE_TIP && !kickstart) {
+  if (abs(pitch) > DISABLE_TIP) {
     tipped = true;
-    robotEnabled = false;
   } else {
     tipped = false;
   }
 
-//  if (abs(pitch) < (DISABLE_TIP - 3)) {
-//    tipped = false;
-//    kickstart = false;
-//  }
+  if (tipped) {
+    robotEnabled = false;
+  }
 
+  //  if (abs(pitch) < (DISABLE_TIP - 3)) {
+  //    tipped = false;
+  //    kickstart = false;
+  //  }
 
   if (millis() - lastMessageTimeMillis > WiFiLossDisableIntervalMillis) {
     speedVal = 0;
@@ -196,7 +198,7 @@ if (abs(pitch) > DISABLE_TIP) {
     ledcWrite(4, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb red
     ledcWrite(5, 256);
     ledcWrite(6, (abs(256 - int(millis() % 5120) / 10))*.9);
-    
+
     digitalWrite(LED_BUILTIN, (millis() % 500 < 250));
 
     if (!wasRobotEnabled) {  // the robot wasn't enabled, but now it is, so this must be the first loop since it was enabled. re set up anything you might want to
@@ -306,9 +308,9 @@ void parseDataReceived() {  // put parse functions here
   turnSpeedVal = map(readByteFromBuffer(counter), 0, 200, -MAX_SPEED * TURN_SPEED_SCALER, MAX_SPEED * TURN_SPEED_SCALER);
   numAuxRecv = readByteFromBuffer(counter);  // how many bytes of control data for extra things
 
-//  if (enable && !robotEnabled) {
-//    kickstart = true;
-//  }
+  //  if (enable && !robotEnabled) {
+  //    kickstart = true;
+  //  }
 
   for (int i = 0; i < numAuxRecv; i++) {
     auxRecvArray[i] = readByteFromBuffer(counter);

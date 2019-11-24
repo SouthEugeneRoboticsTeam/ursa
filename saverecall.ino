@@ -10,6 +10,24 @@ void recallSettings() {
   if (pitchOffset != pitchOffset) {//NaN check
     pitchOffset = 0;
   }
+  if (kP_angle != kP_angle) {//NaN check
+    kP_angle = 0;
+  }
+  if (kI_angle != kI_angle) {//NaN check
+    kI_angle = 0;
+  }
+  if (kD_angle != kD_angle) {//NaN check
+    kD_angle = 0;
+  }
+  if (kP_speed != kP_speed) {//NaN check
+    kP_speed = 0;
+  }
+  if (kI_speed != kI_speed) {//NaN check
+    kI_speed = 0;
+  }
+  if (kD_speed != kD_speed) {//NaN check
+    kD_speed = 0;
+  }
 }
 
 void saveSettings() {
