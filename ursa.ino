@@ -18,6 +18,7 @@ float DRIVE_SPEED_SCALER = .85;  // what proportion of MAX_SPEED the robot's tar
 float TURN_SPEED_SCALER = .05;  // what proportion of MAX_SPEED can be given differently to each wheel in order to turn-controls maximum turn rate
 float PITCH_OFFSET_CHANGE = .999994;  // larger = pitchOffset changes slower
 float pitchOffset = -2.000;  // subtracted from the output in readMPU6050 so that zero pitch can correspond to balenced. Because the MPU6050 may not be mounted in the robot perfectly or because the robot's weight might not be perfectly centered, zero may not otherwise respond to perfectly balanced.
+#define pitchInverter -1
 
 // Set up the rgb led names; used to control common-anode RGB LEDs
 uint8_t RightledR = A15; //GPIO12
