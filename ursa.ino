@@ -197,11 +197,11 @@ void loop() {  // on core 1. the balancing control loop will be here, with the g
 
   if (robotEnabled) {  // run the following code if the robot is enabled
     ledcWrite(1, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb red
-    ledcWrite(2, 256);
-    ledcWrite(3, (abs(256 - int(millis() % 5120) / 10))*.9);
+    ledcWrite(2, 256); // value of 256 turns green off (value of 0 would turn on at full brightness)
+    ledcWrite(3, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb blue
     ledcWrite(4, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb red
-    ledcWrite(5, 256);
-    ledcWrite(6, (abs(256 - int(millis() % 5120) / 10))*.9);
+    ledcWrite(5, 256); // value of 256 turns green off (value of 0 would turn on at full brightness)
+    ledcWrite(6, (abs(256 - int(millis() % 5120) / 10))*.9);    //causes LEDs to throb blue
 
     digitalWrite(LED_BUILTIN, (millis() % 500 < 250));
 
