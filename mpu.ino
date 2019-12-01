@@ -41,10 +41,12 @@ void readMPU6050() {
   if (micros() < lastCalcedMPU6050) {  // try to handle micros' long overflow in a harmless way
     lastCalcedMPU6050 = micros() - 10000;
   }
+  pitch3 = pitch2;
+  pitch2 = pitch1;
   // complementary filter combines gyro and accelerometer tilt data in a way that takes advantage of short term accuracy of the gyro and long term accuracy of the accelerometer
-  pitch = COMPLEMENTARY_FILTER_CONSTANT * ((pitch) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000)  // add rotation rate as measured by the gyro to current pitch - valid in short term
+  pitch1 = COMPLEMENTARY_FILTER_CONSTANT * ((pitch1) + rotationDPS_X * (micros() - lastCalcedMPU6050) / 1000000.000)  // add rotation rate as measured by the gyro to current pitch - valid in short term
           + (1 - COMPLEMENTARY_FILTER_CONSTANT) * (degrees(atan2(accelerationY, accelerationZ)) - pitchOffset * pitchInverter); // in the long term drift towards the angle of gravity measured by the accelerometer
-  pitch *= pitchInverter;
+  pitch = pitchInverter * (pitch1 + pitch2 + pitch3) / 3; //averages the last 3 pitch readings and inverts if necessary
   if (robotEnabled) {  // only adjust pitchOffset when the robot is enabled
     pitchOffset = (pitch + pitchOffset) * (1 - PITCH_OFFSET_CHANGE) + pitchOffset * (PITCH_OFFSET_CHANGE);  // slowly move pitchOffset towards the current pitch value, the overall average pitch value should be close to the balance point
   }
