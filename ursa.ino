@@ -82,7 +82,7 @@ hw_timer_t *rightStepTimer = NULL;
 byte numBytesToSend = 0;
 // Define the SSID and password for the robot's access point
 char robotSSID[12];  // defined in the setup method
-const char *robotPass = "sert2521";
+const char *robotPass = "Headbot";
 volatile byte recvdData[maxWifiRecvBufSize] = {0};  // array to hold data recieved from DS.
 volatile boolean receivedNewData = false;  // set true when data gotten, set false when parsed
 volatile byte dataToSend[maxWifiSendBufSize] = {0};  // array to hold data to send to DS.
